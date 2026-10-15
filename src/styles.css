@@ -108,3 +108,5 @@ dialog.help h3 { margin: 16px 0 4px; font-size: 13px; color: var(--accent); }
 dialog.help p, dialog.help li { color: #cfcfcf; }
 dialog.help p { margin: 6px 0; }
 dialog.help .close { position: sticky; float: right; top: 0; }
+dialog.help .foot { margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px; }
+dialog.help a { color: var(--accent); }

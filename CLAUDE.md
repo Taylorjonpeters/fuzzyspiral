@@ -40,5 +40,6 @@ the next session. Read it before changing `core/`.
 ```bash
 npm run dev            # http://localhost:5274
 npm test               # vitest, core + 3mf round trip
+npm run build          # static site; CI deploys main to GitHub Pages
 node test/make-fixtures.js   # synthetic Bambu .gcode.3mf and Prusa .gcode into fixtures/
 ```

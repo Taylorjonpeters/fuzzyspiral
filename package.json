@@ -1,9 +1,29 @@
 {
-  "name": "3dp-fuzzyspiral",
+  "name": "fuzzyspiral",
   "version": "0.1.0",
   "private": true,
   "description": "Selective, patterned fuzzy skin for sliced G-code (Bambu .gcode.3mf and plain .gcode)",
+  "license": "MIT",
+  "homepage": "https://taylorjonpeters.github.io/fuzzyspiral/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Taylorjonpeters/fuzzyspiral.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Taylorjonpeters/fuzzyspiral/issues"
+  },
+  "keywords": [
+    "3d-printing",
+    "fuzzy-skin",
+    "gcode",
+    "bambu-lab",
+    "3mf",
+    "post-processor"
+  ],
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
