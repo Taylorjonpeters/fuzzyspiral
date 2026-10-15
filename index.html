@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FuzzySpiral</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231c1c1c'/%3E%3Cpath d='M9 26 L9 6 M23 26 L23 6' stroke='%235b7fb8' stroke-width='2.5'/%3E%3Cpath d='M9 24 L23 18 M9 16 L23 10' stroke='%23ff8a3d' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <header class="hdr">
+      <div class="brand">Fuzzy<span>Spiral</span></div>
+      <button id="open">Open sliced file…</button>
+      <input id="file" type="file" accept=".3mf,.gcode,.gco,.g" hidden />
+      <select id="plate" hidden></select>
+      <span class="sep"></span>
+      <button id="loadSettings" title="Load pattern settings from a JSON file">Load pattern…</button>
+      <button id="saveSettings" title="Save pattern settings as a JSON file">Save pattern…</button>
+      <input id="settingsFile" type="file" accept=".json" hidden />
+      <span class="grow"></span>
+      <button id="exportGcode" class="primary" disabled>Export .gcode</button>
+      <button id="export3mf" class="primary" disabled title="For Bambu printers: open in Bambu Studio and Print plate, or copy to SD">Export .gcode.3mf</button>
+      <div id="status" class="status">ready</div>
+    </header>
+
+    <div class="main">
+      <aside class="side">
+        <section id="fileInfo" class="file-info"></section>
+        <div id="panel"></div>
+        <section class="notes">
+          <h2>Getting it onto the printer</h2>
+          <p><b>Bambu (X1, P1, A1, A1 mini):</b> in Bambu Studio, slice, then File › Export › <i>Export plate sliced file</i>. Load that here. To print the export, open it in Bambu Studio and use <i>Print plate</i>, or copy it to the SD card.</p>
+          <p><b>Prusa, Orca, others:</b> load the plain <code>.gcode</code>. PrusaSlicer writes binary <code>.bgcode</code> for MK4 and XL by default, so turn that off under Printer Settings first.</p>
+          <p>The print-time estimate inside the file still describes the original print.</p>
+        </section>
+      </aside>
+
+      <section class="stage-wrap">
+        <div id="stage" class="stage">
+          <div id="empty" class="empty">
+            <p>Drop a sliced <code>.gcode.3mf</code> or <code>.gcode</code> here</p>
+            <p class="hint">Only outer walls are shown and changed. Orange is fuzzed, blue is left smooth.</p>
+          </div>
+        </div>
+        <div class="stage-bar">
+          <div class="seg">
+            <button data-view="original">Original</button>
+            <button data-view="fuzzed" class="on">Fuzzed</button>
+          </div>
+          <label class="layers">
+            <span id="layerLabel">layers</span>
+            <input id="layerLo" type="range" min="1" max="1" value="1" />
+            <input id="layerHi" type="range" min="1" max="1" value="1" />
+          </label>
+          <span id="stats" class="stats"></span>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

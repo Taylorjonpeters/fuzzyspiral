@@ -1,0 +1,208 @@
+// Wiring only: file in, settings to the worker, buffers to the preview, bytes out.
+
+import { createPreview } from "./view/preview.js";
+import { mountPanel } from "./view/panel.js";
+import { DEFAULT_FUZZ } from "./core/fuzz.js";
+import { PRESETS } from "./core/patterns.js";
+
+const STORE = "fuzzyspiral.settings.v1";
+const $ = (id) => document.getElementById(id);
+
+const defaults = () => ({
+  fuzz: { ...DEFAULT_FUZZ },
+  center: { mode: "auto", x: 128, y: 128 },
+  stack: PRESETS["Spiral, 3-start"](),
+});
+
+function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE) ?? "null");
+    if (s?.fuzz && s?.center && Array.isArray(s.stack)) return { ...defaults(), ...s, fuzz: { ...DEFAULT_FUZZ, ...s.fuzz } };
+  } catch {}
+  return defaults();
+}
+const saveSettings = () => { try { localStorage.setItem(STORE, JSON.stringify(state.settings)); } catch {} };
+
+const state = { settings: loadSettings(), info: null, view: "fuzzed", picking: false };
+
+// Worker RPC: each request gets an id; replies resolve the matching promise.
+const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+let nextId = 1;
+const pending = new Map();
+worker.onmessage = (ev) => {
+  const p = pending.get(ev.data.id);
+  if (!p) return;
+  pending.delete(ev.data.id);
+  ev.data.type === "error" ? p.reject(new Error(ev.data.message)) : p.resolve(ev.data);
+};
+const call = (msg, transfer = []) => new Promise((resolve, reject) => {
+  const id = nextId++;
+  pending.set(id, { resolve, reject });
+  worker.postMessage({ ...msg, id }, transfer);
+});
+
+const status = (t, kind = "") => { $("status").textContent = t; $("status").className = `status ${kind}`; };
+const settingsSnapshot = () => JSON.parse(JSON.stringify(state.settings));
+
+const preview = createPreview($("stage"));
+
+// Only the newest preview request matters; older ones are dropped when they land.
+let previewSeq = 0;
+let previewTimer = 0;
+async function refreshPreview() {
+  if (!state.info) return;
+  const seq = ++previewSeq;
+  status("fuzzing…");
+  try {
+    const d = await call({ type: "preview", settings: settingsSnapshot(), view: state.view });
+    if (seq !== previewSeq) return;
+    preview.setData(d);
+    applyLayerRange();
+    const s = d.stats;
+    $("stats").textContent = `${s.runsChanged.toLocaleString()} of ${state.info.runs.toLocaleString()} outer-wall runs fuzzed · ${s.pointsBefore.toLocaleString()} → ${s.pointsAfter.toLocaleString()} moves`;
+    status("ready");
+  } catch (e) {
+    status(e.message, "err");
+  }
+}
+const changed = () => {
+  saveSettings();
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(refreshPreview, 120);
+};
+
+const panel = mountPanel($("panel"), state, {
+  changed,
+  pickCenter: () => {
+    state.picking = true;
+    $("stage").classList.add("picking");
+    status("click the bed to set the pattern center");
+  },
+});
+
+preview.canvas.addEventListener("click", (e) => {
+  if (!state.picking) return;
+  const p = preview.pickBed(e.clientX, e.clientY);
+  state.picking = false;
+  $("stage").classList.remove("picking");
+  if (!p) return status("missed the bed");
+  Object.assign(state.settings.center, { mode: "custom", x: +p.x.toFixed(2), y: +p.y.toFixed(2) });
+  panel.refresh();
+  changed();
+});
+
+// Layer range sliders.
+function applyLayerRange() {
+  let lo = +$("layerLo").value, hi = +$("layerHi").value;
+  if (lo > hi) [lo, hi] = [hi, lo];
+  $("layerLabel").textContent = `layers ${lo}–${hi}`;
+  preview.setLayerRange(lo, hi);
+}
+$("layerLo").addEventListener("input", applyLayerRange);
+$("layerHi").addEventListener("input", applyLayerRange);
+
+for (const b of document.querySelectorAll("[data-view]")) {
+  b.addEventListener("click", () => {
+    state.view = b.dataset.view;
+    for (const o of document.querySelectorAll("[data-view]")) o.classList.toggle("on", o === b);
+    refreshPreview();
+  });
+}
+
+function showInfo(info) {
+  state.info = info;
+  const n = Math.max(1, info.layerCount);
+  for (const id of ["layerLo", "layerHi"]) { $(id).max = String(n); $(id).min = "1"; }
+  $("layerLo").value = "1";
+  $("layerHi").value = String(n);
+  $("fileInfo").replaceChildren(
+    Object.assign(document.createElement("div"), { className: "fname", textContent: info.name }),
+    Object.assign(document.createElement("div"), {
+      className: "meta",
+      textContent: `${info.dialect} · ${info.layerCount} layers · ${info.objects.length} object${info.objects.length === 1 ? "" : "s"} · ${info.runs.toLocaleString()} outer-wall runs`,
+    }),
+    ...info.warnings.map((w) => Object.assign(document.createElement("div"), { className: "warn", textContent: w })),
+  );
+  const plateSel = $("plate");
+  plateSel.hidden = info.plates.length < 2;
+  plateSel.replaceChildren(...info.plates.map((p) => Object.assign(document.createElement("option"), { value: p, textContent: `Plate ${p}`, selected: p === info.plate })));
+  $("export3mf").disabled = info.kind !== "3mf";
+  $("exportGcode").disabled = false;
+  $("empty").hidden = true;
+}
+
+async function openFile(file) {
+  status(`reading ${file.name}…`);
+  try {
+    const buf = await file.arrayBuffer();
+    const { info } = await call({ type: "load", name: file.name, bytes: buf }, [buf]);
+    preview.resetFraming();
+    showInfo(info);
+    await refreshPreview();
+  } catch (e) {
+    status(e.message, "err");
+  }
+}
+
+$("plate").addEventListener("change", async (e) => {
+  const { info } = await call({ type: "plate", plate: +e.target.value });
+  preview.resetFraming();
+  showInfo(info);
+  refreshPreview();
+});
+
+$("open").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", (e) => { const f = e.target.files?.[0]; if (f) openFile(f); e.target.value = ""; });
+window.addEventListener("dragover", (e) => { e.preventDefault(); document.body.classList.add("drag"); });
+window.addEventListener("dragleave", (e) => { if (!e.relatedTarget) document.body.classList.remove("drag"); });
+window.addEventListener("drop", (e) => {
+  e.preventDefault();
+  document.body.classList.remove("drag");
+  const f = e.dataTransfer?.files?.[0];
+  if (f) openFile(f);
+});
+
+function outName(format) {
+  const base = state.info.name.replace(/\.gcode\.3mf$|\.3mf$|\.gcode$/i, "");
+  return format === "3mf" ? `${base}-fuzzy.gcode.3mf` : `${base}-fuzzy.gcode`;
+}
+
+async function doExport(format) {
+  if (!state.info) return;
+  status("writing…");
+  try {
+    const { bytes } = await call({ type: "export", settings: settingsSnapshot(), format });
+    const blob = new Blob([bytes], { type: format === "3mf" ? "application/vnd.ms-package.3dmanufacturing-3dmodel+xml" : "text/plain" });
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: outName(format) });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    status(`saved ${a.download}`);
+  } catch (e) {
+    status(e.message, "err");
+  }
+}
+$("export3mf").addEventListener("click", () => doExport("3mf"));
+$("exportGcode").addEventListener("click", () => doExport("gcode"));
+
+// Pattern settings as a file, for sharing or keeping a library of looks.
+$("saveSettings").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(state.settings, null, 2)], { type: "application/json" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "fuzzy-pattern.json" });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+});
+$("loadSettings").addEventListener("click", () => $("settingsFile").click());
+$("settingsFile").addEventListener("change", async (e) => {
+  const f = e.target.files?.[0];
+  e.target.value = "";
+  if (!f) return;
+  try {
+    const s = JSON.parse(await f.text());
+    if (!Array.isArray(s.stack)) throw new Error("not a pattern file");
+    state.settings = { ...defaults(), ...s, fuzz: { ...DEFAULT_FUZZ, ...s.fuzz } };
+    panel.refresh();
+    changed();
+  } catch (err) {
+    status(`couldn't load pattern: ${err.message}`, "err");
+  }
+});

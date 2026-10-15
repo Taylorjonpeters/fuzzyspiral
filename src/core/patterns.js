@@ -1,0 +1,177 @@
+// Pattern masks: where the fuzz goes, as a pure function of position.
+//
+// A mask is a stack of layers. Each layer maps a sample point to 0..1, then blends into the
+// running value. Every periodic pattern is expressed as a phase `u` in [0, 1) plus a duty
+// cycle, so feathering works the same way for spirals, stripes, bands and checkers.
+
+/**
+ * @typedef {object} Sample
+ * @property {number} x
+ * @property {number} y
+ * @property {number} z
+ * @property {number} layer   1-based, matching the layer numbers Bambu Studio shows
+ * @property {number} theta   angle around the object's pattern center, radians [-π, π]
+ * @property {number} t       height as a fraction of the object's printed height, 0..1
+ */
+
+/**
+ * @typedef {object} MaskLayer
+ * @property {string} id
+ * @property {'constant'|'zrange'|'spiral'|'stripes'|'bands'|'checker'|'gradient'} type
+ * @property {boolean} enabled
+ * @property {'max'|'add'|'multiply'|'subtract'|'min'} blend   ignored for the first enabled layer
+ * @property {boolean} invert
+ * @property {number} strength  0..1, scales this layer's output before blending
+ * @property {number} feather   edge softness as a fraction of one period (zrange: mm)
+ * @property {Record<string, any>} params
+ */
+
+const TAU = Math.PI * 2;
+
+const frac = (v) => v - Math.floor(v);
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const smoothstep = (a, b, v) => {
+  if (a === b) return v < a ? 0 : 1;
+  const t = clamp01((v - a) / (b - a));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * 1 inside [0, duty) of a unit period, 0 outside, with feathered edges.
+ * The signed distance to the nearest band edge is in period units, so `feather` is too.
+ */
+export function band(u, duty, feather) {
+  if (duty >= 1) return 1;
+  if (duty <= 0) return 0;
+  const inside = u < duty;
+  const d = inside ? Math.min(u, duty - u) : -Math.min(u - duty, 1 - u);
+  if (feather <= 0) return d >= 0 ? 1 : 0;
+  return smoothstep(-feather / 2, feather / 2, d);
+}
+
+/** Angle as a fraction of a turn, 0..1, starting at +X and running counter-clockwise. */
+const turn = (theta) => frac(theta / TAU);
+
+/** @type {Record<MaskLayer['type'], (s: Sample, p: any, feather: number) => number>} */
+const EVAL = {
+  constant: () => 1,
+
+  // Fuzz only between two heights. `unit` picks layer numbers or millimetres.
+  zrange(s, p, feather) {
+    const v = p.unit === "layer" ? s.layer : s.z;
+    const lo = Number(p.from), hi = Number(p.to);
+    // A layer range is inclusive at both ends; feathering in layers is meaningless.
+    if (p.unit === "layer") return v >= lo && v <= hi ? 1 : 0;
+    const f = feather / 2;
+    return smoothstep(lo - f, lo + f, v) * (1 - smoothstep(hi - f, hi + f, v));
+  },
+
+  // A helix: stripes that wind around the object as it rises.
+  // `pitch` is the height one stripe climbs in a full turn; `starts` is how many stripes.
+  spiral(s, p, feather) {
+    const hand = p.hand === "left" ? -1 : 1;
+    const u = frac(p.starts * (hand * turn(s.theta) - s.z / p.pitch) + p.phase);
+    return band(u, p.duty, feather);
+  },
+
+  // Vertical stripes evenly spaced around the object.
+  stripes(s, p, feather) {
+    return band(frac(p.count * turn(s.theta) + p.phase), p.duty, feather);
+  },
+
+  // Horizontal rings every `period` mm.
+  bands(s, p, feather) {
+    return band(frac(s.z / p.period + p.phase), p.duty, feather);
+  },
+
+  checker(s, p, feather) {
+    const a = band(frac(p.count * turn(s.theta) + p.phase), 0.5, feather);
+    const b = band(frac(s.z / p.period), 0.5, feather);
+    return a * (1 - b) + b * (1 - a);
+  },
+
+  // Amplitude ramps between two heights given as percent of the object's height.
+  gradient(s, p) {
+    const lo = p.from / 100, hi = p.to / 100;
+    const k = lo === hi ? (s.t < lo ? 0 : 1) : clamp01((s.t - lo) / (hi - lo));
+    const eased = p.ease ? k * k * (3 - 2 * k) : k;
+    return p.startAmp + (p.endAmp - p.startAmp) * eased;
+  },
+};
+
+/**
+ * Evaluate a mask stack at one sample.
+ * @param {MaskLayer[]} stack
+ * @param {Sample} s
+ * @returns {number} 0..1
+ */
+export function evalMask(stack, s) {
+  let acc = 0;
+  let first = true;
+  for (const L of stack) {
+    if (!L.enabled) continue;
+    const fn = EVAL[L.type];
+    if (!fn) continue;
+    let v = clamp01(fn(s, L.params, L.feather ?? 0));
+    if (L.invert) v = 1 - v;
+    v *= L.strength ?? 1;
+    if (first) { acc = v; first = false; continue; }
+    switch (L.blend) {
+      case "add": acc = acc + v; break;
+      case "multiply": acc = acc * v; break;
+      case "subtract": acc = acc - v; break;
+      case "min": acc = Math.min(acc, v); break;
+      default: acc = Math.max(acc, v);
+    }
+    acc = clamp01(acc);
+  }
+  return acc;
+}
+
+let nextId = 1;
+const uid = () => `L${Date.now().toString(36)}${(nextId++).toString(36)}`;
+
+/** Defaults per type, so a freshly added layer already does something visible. */
+export const LAYER_DEFAULTS = {
+  constant: { feather: 0, params: {} },
+  zrange: { feather: 0, params: { unit: "layer", from: 2, to: 40 } },
+  spiral: { feather: 0.1, params: { starts: 3, pitch: 30, duty: 0.5, hand: "right", phase: 0 } },
+  stripes: { feather: 0.1, params: { count: 12, duty: 0.5, phase: 0 } },
+  bands: { feather: 0.1, params: { period: 4, duty: 0.5, phase: 0 } },
+  checker: { feather: 0.05, params: { count: 8, period: 5, phase: 0 } },
+  gradient: { feather: 0, params: { from: 0, to: 100, startAmp: 1, endAmp: 0, ease: true } },
+};
+
+/**
+ * @param {MaskLayer['type']} type
+ * @param {Partial<MaskLayer> & {params?: object}} [over]
+ * @returns {MaskLayer}
+ */
+export function makeLayer(type, over = {}) {
+  const d = LAYER_DEFAULTS[type];
+  return {
+    id: uid(),
+    type,
+    enabled: true,
+    blend: "max",
+    invert: false,
+    strength: 1,
+    feather: d.feather,
+    ...over,
+    params: { ...d.params, ...(over.params ?? {}) },
+  };
+}
+
+/** Named starting points. Each returns a fresh stack so presets are never shared by reference. */
+export const PRESETS = {
+  "Spiral, 3-start": () => [makeLayer("spiral")],
+  "Stripes ×12": () => [makeLayer("stripes")],
+  "Fuzz up to layer 40": () => [makeLayer("zrange", { params: { unit: "layer", from: 2, to: 40 } })],
+  "Fade out toward the top": () => [makeLayer("gradient")],
+  "Spiral that fades out": () => [
+    makeLayer("spiral", { params: { starts: 2, pitch: 40 } }),
+    makeLayer("gradient", { blend: "multiply" }),
+  ],
+  "Checker": () => [makeLayer("checker")],
+  "Everywhere (plain fuzzy skin)": () => [makeLayer("constant")],
+};

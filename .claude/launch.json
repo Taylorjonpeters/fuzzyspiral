@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "fuzzyspiral", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 5274, "env": { "PORT": "5274" } }
+  ]
+}

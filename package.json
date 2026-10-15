@@ -1,0 +1,22 @@
+{
+  "name": "3dp-fuzzyspiral",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Selective, patterned fuzzy skin for sliced G-code (Bambu .gcode.3mf and plain .gcode)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "spark-md5": "^3.0.2",
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10",
+    "vitest": "^2.1.4"
+  }
+}
