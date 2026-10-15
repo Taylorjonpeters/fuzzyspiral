@@ -49,6 +49,7 @@ const TYPE_LABEL = {
 };
 
 const FUZZ = [
+  { k: "walls", label: "Walls", kind: "select", options: [["all", "outside and holes"], ["contour", "outside only (skip holes)"]] },
   { k: "thickness", label: "Thickness (mm)", kind: "range", min: 0.05, max: 1.5, step: 0.01 },
   { k: "pointDist", label: "Point distance (mm)", kind: "range", min: 0.1, max: 3, step: 0.05 },
   { k: "noise", label: "Noise", kind: "select", options: [["classic", "classic (random)"], ["perlin", "Perlin (smooth)"]] },

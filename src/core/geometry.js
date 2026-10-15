@@ -64,10 +64,13 @@ export const runPoints = (run) => [run.from, ...run.segs.map((s) => s.to)];
  *
  * @param {import('./parse.js').Run[]} runs
  * @param {Record<string, {x:number,y:number}>} centers
- * @returns {Int8Array}
+ * Also reports which runs are holes. Open runs are never counted as holes.
+ *
+ * @returns {{sides: Int8Array, holes: Uint8Array}}
  */
 export function airSides(runs, centers) {
   const sides = new Int8Array(runs.length).fill(1);
+  const holes = new Uint8Array(runs.length);
   /** @type {Map<string, {idx:number, pts:any[], area:number}[]>} */
   const groups = new Map();
   runs.forEach((run, idx) => {
@@ -90,12 +93,13 @@ export function airSides(runs, centers) {
         if (M !== L && Math.abs(M.area) > Math.abs(L.area) && pointInPolygon(p.x, p.y, M.pts)) depth++;
       }
       const hole = depth % 2 === 1;
+      holes[L.idx] = hole ? 1 : 0;
       const ccw = L.area > 0;
       // Right-hand normal points outside the loop when CCW. Air is outside unless it's a hole.
       sides[L.idx] = ccw !== hole ? 1 : -1;
     }
   }
-  return sides;
+  return { sides, holes };
 }
 
 function openRunSide(pts, c) {

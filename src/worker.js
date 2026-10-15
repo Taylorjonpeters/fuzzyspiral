@@ -65,11 +65,14 @@ function previewBuffers(settings, view) {
         v += 2; prev = s.to; prevAmp = s.amp;
       }
     } else {
+      // Original view shows where the pattern lands; fuzzed view shows only what changed,
+      // so runs left alone (first layer, holes when skipped) are drawn smooth.
+      const ampAt = view === "fuzzed" ? () => 0 : (q) => mask(q.x, q.y, q.z, r.layer, r.obj);
       const pts = runPoints(r);
-      prevAmp = mask(prev.x, prev.y, prev.z, r.layer, r.obj);
+      prevAmp = ampAt(prev);
       for (let i = 1; i < pts.length; i++) {
         const q = pts[i];
-        const a = mask(q.x, q.y, q.z, r.layer, r.obj);
+        const a = ampAt(q);
         pos.set([prev.x, prev.y, prev.z, q.x, q.y, q.z], v * 3);
         amp[v] = prevAmp; amp[v + 1] = a;
         v += 2; prev = q; prevAmp = a;

@@ -18,6 +18,7 @@ import { airSides, runPoints } from "./geometry.js";
  * @property {number} seed
  * @property {number} maxPtsPerMm    caps point density so fast walls don't stutter
  * @property {boolean} skipFirstLayer
+ * @property {'all'|'contour'} walls  'contour' leaves the outer walls of holes smooth
  */
 
 /**
@@ -38,6 +39,7 @@ export const DEFAULT_FUZZ = {
   seed: 1,
   maxPtsPerMm: 5,
   skipFirstLayer: true,
+  walls: "all",
 };
 
 /**
@@ -85,7 +87,7 @@ export function maskSampler(settings, frames) {
 export function applyFuzz(parsed, settings) {
   const F = { ...DEFAULT_FUZZ, ...settings.fuzz };
   const frames = objectFrames(parsed, settings.center);
-  const sides = airSides(parsed.runs, frames);
+  const { sides, holes } = airSides(parsed.runs, frames);
   const mask = maskSampler(settings, frames);
   const perlin = perlin3(F.seed);
   const spacing = Math.max(F.pointDist, 1 / Math.max(F.maxPtsPerMm, 0.01));
@@ -93,7 +95,10 @@ export function applyFuzz(parsed, settings) {
 
   const out = parsed.runs.map((run, idx) => {
     stats.pointsBefore += run.segs.length;
-    if (F.skipFirstLayer && run.layer <= 1) { stats.pointsAfter += run.segs.length; return null; }
+    if ((F.skipFirstLayer && run.layer <= 1) || (F.walls === "contour" && holes[idx])) {
+      stats.pointsAfter += run.segs.length;
+      return null;
+    }
     const res = fuzzRun(run, sides[idx], F, spacing, mask, perlin, rng((F.seed * 2654435761) ^ (idx + 1)));
     stats.pointsAfter += res ? res.length : run.segs.length;
     if (res) stats.runsChanged++;

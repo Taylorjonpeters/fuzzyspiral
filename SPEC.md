@@ -46,6 +46,8 @@ byte-identical and in its original order, and PNGs are stored uncompressed.
 - Unmoved interior samples are dropped as collinear. A segment whose start, end and samples all
   have mask 0 is copied as-is. A run with no moved point is emitted as its original lines.
 - `skipFirstLayer` (default on) leaves layer 1 smooth for bed adhesion.
+- `walls: 'contour'` leaves the outer walls of holes smooth, like Bambu's "Contour" fuzzy skin
+  option. It uses the same hole test as the air side, so open runs always count as outside.
 
 ## 4. Patterns
 

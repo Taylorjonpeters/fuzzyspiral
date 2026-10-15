@@ -122,6 +122,14 @@ describe("fuzz", () => {
     expect(Math.max(...radial(hole, 160, 100))).toBeLessThan(4 + 0.02);
   });
 
+  it("leaves hole walls smooth when set to outside only", () => {
+    const out = applyFuzz(p, { ...everywhere, fuzz: { seed: 7, walls: "contour" } }).out;
+    // Layer 2: cylinder, square, hole
+    expect(out[3]).not.toBeNull();
+    expect(out[4]).not.toBeNull();
+    expect(out[5]).toBeNull();
+  });
+
   it("changes only the layers inside a layer range", () => {
     const stack = [makeLayer("zrange", { params: { unit: "layer", from: 3, to: 4 } })];
     const out = applyFuzz(p, { fuzz: { seed: 1 }, center: { mode: "auto" }, stack }).out;
