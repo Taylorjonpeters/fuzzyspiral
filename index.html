@@ -13,44 +13,35 @@
   <body>
     <header class="hdr">
       <div class="brand">Fuzzy<span>Spiral</span></div>
-      <button id="open">Open sliced file…</button>
+      <button id="open" title="Load a sliced .gcode.3mf or .gcode (or drop it anywhere on the page)">Open…</button>
       <input id="file" type="file" accept=".3mf,.gcode,.gco,.g" hidden />
-      <select id="plate" hidden></select>
-      <span class="sep"></span>
-      <button id="loadSettings" title="Load pattern settings from a JSON file">Load pattern…</button>
-      <button id="saveSettings" title="Save pattern settings as a JSON file">Save pattern…</button>
+      <select id="plate" hidden title="Which plate of the file to edit"></select>
       <input id="settingsFile" type="file" accept=".json" hidden />
       <span class="grow"></span>
-      <button id="exportGcode" class="primary" disabled>Export .gcode</button>
-      <button id="export3mf" class="primary" disabled title="For Bambu printers: open in Bambu Studio and Print plate, or copy to SD">Export .gcode.3mf</button>
-      <div id="status" class="status">ready</div>
+      <div id="status" class="status"></div>
+      <button id="exportGcode" disabled title="Plain G-code for Prusa, Orca, Klipper and other printers">.gcode</button>
+      <button id="export3mf" class="primary" disabled title="For Bambu printers: open in Bambu Studio and Print plate, or copy to the SD card">Export .gcode.3mf</button>
+      <button id="help" class="icon round" title="How this works">?</button>
     </header>
 
     <div class="main">
       <aside class="side">
         <section id="fileInfo" class="file-info"></section>
         <div id="panel"></div>
-        <section class="notes">
-          <h2>Getting it onto the printer</h2>
-          <p><b>Bambu (X1, P1, A1, A1 mini):</b> in Bambu Studio, slice, then File › Export › <i>Export plate sliced file</i>. Load that here. To print the export, open it in Bambu Studio and use <i>Print plate</i>, or copy it to the SD card.</p>
-          <p><b>Prusa, Orca, others:</b> load the plain <code>.gcode</code>. PrusaSlicer writes binary <code>.bgcode</code> for MK4 and XL by default, so turn that off under Printer Settings first.</p>
-          <p>The print-time estimate inside the file still describes the original print.</p>
-        </section>
       </aside>
 
       <section class="stage-wrap">
         <div id="stage" class="stage">
           <div id="empty" class="empty">
-            <p>Drop a sliced <code>.gcode.3mf</code> or <code>.gcode</code> here</p>
-            <p class="hint">Only outer walls are shown and changed. Orange is fuzzed, blue is left smooth.</p>
+            <p>Drop a sliced <code>.gcode.3mf</code> or <code>.gcode</code></p>
           </div>
         </div>
         <div class="stage-bar">
           <div class="seg">
-            <button data-view="original">Original</button>
-            <button data-view="fuzzed" class="on">Fuzzed</button>
+            <button data-view="original" title="Unchanged walls, colored by where the pattern lands">Pattern</button>
+            <button data-view="fuzzed" class="on" title="The toolpath that will be exported. Orange is fuzzed, blue is smooth.">Result</button>
           </div>
-          <label class="layers">
+          <label class="layers" title="Show a range of layers">
             <span id="layerLabel">layers</span>
             <input id="layerLo" type="range" min="1" max="1" value="1" />
             <input id="layerHi" type="range" min="1" max="1" value="1" />
@@ -59,6 +50,28 @@
         </div>
       </section>
     </div>
+    <dialog id="helpDialog" class="help">
+      <form method="dialog"><button class="icon close" title="Close">×</button></form>
+      <h2>How it works</h2>
+      <p>FuzzySpiral adds slicer-style fuzzy skin to an already-sliced file, but only where your pattern says. It changes outer walls and nothing else. In the preview, orange is fuzzed and blue is left smooth.</p>
+      <ol>
+        <li>Slice in your slicer with fuzzy skin <b>off</b>.</li>
+        <li>Open the sliced file here, then pick a preset or stack pattern layers.</li>
+        <li>Export, and print the exported file.</li>
+      </ol>
+      <h3>Bambu (X1, P1, A1, A1 mini)</h3>
+      <p>In Bambu Studio use File › Export › <i>Export plate sliced file</i> (⌘G) and open that <code>.gcode.3mf</code> here. To print the export, open it in Bambu Studio and choose <i>Print plate</i>, or copy it to the SD card.</p>
+      <h3>Prusa, Orca, Klipper and others</h3>
+      <p>Export plain <code>.gcode</code> from the slicer and load it here. PrusaSlicer writes binary <code>.bgcode</code> for the MK4 and XL by default, so turn that off in Printer Settings first.</p>
+      <h3>Patterns</h3>
+      <p>Layers stack top to bottom. The first sets the area, and each one after it combines with the result: <b>union</b> adds its area, <b>intersect</b> keeps only the overlap, <b>subtract</b> cuts it out. Spirals, stripes and checkers wrap around each object's middle, or around a point you pick on the bed (Fuzzy skin › More).</p>
+      <p>Hover any control for what it does. Save and load patterns with the ⤓ ⤒ buttons next to Pattern.</p>
+      <h3>Good to know</h3>
+      <ul>
+        <li>The print-time estimate in the file still describes the original print.</li>
+        <li>Arcs in fuzzed walls become straight segments; untouched walls are copied exactly.</li>
+      </ul>
+    </dialog>
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>

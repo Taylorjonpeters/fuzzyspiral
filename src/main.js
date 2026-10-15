@@ -59,8 +59,9 @@ async function refreshPreview() {
     preview.setData(d);
     applyLayerRange();
     const s = d.stats;
-    $("stats").textContent = `${s.runsChanged.toLocaleString()} of ${state.info.runs.toLocaleString()} outer-wall runs fuzzed · ${s.pointsBefore.toLocaleString()} → ${s.pointsAfter.toLocaleString()} moves`;
-    status("ready");
+    $("stats").textContent = `${s.runsChanged.toLocaleString()} / ${state.info.runs.toLocaleString()} walls fuzzed`;
+    $("stats").title = `${s.runsChanged.toLocaleString()} of ${state.info.runs.toLocaleString()} outer-wall runs changed. Moves: ${s.pointsBefore.toLocaleString()} → ${s.pointsAfter.toLocaleString()}.`;
+    status("");
   } catch (e) {
     status(e.message, "err");
   }
@@ -119,7 +120,8 @@ function showInfo(info) {
     Object.assign(document.createElement("div"), { className: "fname", textContent: info.name }),
     Object.assign(document.createElement("div"), {
       className: "meta",
-      textContent: `${info.dialect} · ${info.layerCount} layers · ${info.objects.length} object${info.objects.length === 1 ? "" : "s"} · ${info.runs.toLocaleString()} outer-wall runs`,
+      textContent: `${info.layerCount} layers · ${info.objects.length} object${info.objects.length === 1 ? "" : "s"}`,
+      title: `Made by ${info.dialect} · ${info.lines.toLocaleString()} lines · ${info.runs.toLocaleString()} outer-wall runs`,
     }),
     ...info.warnings.map((w) => Object.assign(document.createElement("div"), { className: "warn", textContent: w })),
   );
@@ -177,21 +179,22 @@ async function doExport(format) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
     status(`saved ${a.download}`);
+    setTimeout(() => status(""), 4000);
   } catch (e) {
     status(e.message, "err");
   }
 }
 $("export3mf").addEventListener("click", () => doExport("3mf"));
+$("help").addEventListener("click", () => $("helpDialog").showModal());
 $("exportGcode").addEventListener("click", () => doExport("gcode"));
 
 // Pattern settings as a file, for sharing or keeping a library of looks.
-$("saveSettings").addEventListener("click", () => {
+function savePattern() {
   const blob = new Blob([JSON.stringify(state.settings, null, 2)], { type: "application/json" });
   const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "fuzzy-pattern.json" });
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-});
-$("loadSettings").addEventListener("click", () => $("settingsFile").click());
+}
 $("settingsFile").addEventListener("change", async (e) => {
   const f = e.target.files?.[0];
   e.target.value = "";
