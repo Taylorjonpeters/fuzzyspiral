@@ -1,6 +1,7 @@
 # Contributing
 
 Issues and pull requests are welcome, and reports from real prints are especially useful.
+Please follow the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Reporting a problem with a file
 

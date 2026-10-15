@@ -1,0 +1,47 @@
+name: Something went wrong
+description: The preview, the export, the slicer or printer rejecting a file, or a bad print
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you expected, and what you got instead. Photos of the print help a lot.
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did it go wrong?
+      options:
+        - Loading the file
+        - The preview
+        - Exporting
+        - Slicer or printer rejected the exported file
+        - The print itself
+    validations:
+      required: true
+  - type: input
+    id: slicer
+    attributes:
+      label: Slicer and version
+      placeholder: Bambu Studio 2.05, OrcaSlicer 2.3, PrusaSlicer 2.9…
+    validations:
+      required: true
+  - type: input
+    id: printer
+    attributes:
+      label: Printer
+      placeholder: Bambu Lab A1, Prusa MK4…
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Files
+      description: Drag in the sliced file (zip it if GitHub refuses the extension) and your pattern, saved with the ⤓ button next to "Pattern".
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      placeholder: Chrome 140 on macOS
