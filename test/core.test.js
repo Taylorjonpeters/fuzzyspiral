@@ -4,7 +4,7 @@ import { zipSync, strToU8, strFromU8, unzipSync } from "fflate";
 import { parseGcode } from "../src/core/parse.js";
 import { applyFuzz } from "../src/core/fuzz.js";
 import { emitGcode } from "../src/core/emit.js";
-import { evalMask, makeLayer, band, spiralFromStroke } from "../src/core/patterns.js";
+import { evalMask, makeLayer, band, spiralFromStroke, gradientFromStroke, tightenGradient } from "../src/core/patterns.js";
 import { readArchive, plateGcode, checkMd5, writeArchive } from "../src/io/threemf.js";
 import { bambuGcode, prusaGcode, lampGcode, slottedBaseGcode } from "./synth.js";
 
@@ -190,6 +190,53 @@ describe("walls split mid-loop", () => {
       .filter((x) => x.r.layer === 2 && x.o)
       .map((x) => Math.round(Math.hypot(x.r.segs[0].to.x - 128, x.r.segs[0].to.y - 128)));
     expect([...new Set(fuzzedRadii)].sort((a, b) => a - b)).toEqual([8, 40]);
+  });
+});
+
+describe("gradient from a stroke", () => {
+  const frame = { minZ: 0, maxZ: 50 };
+  const params = { startAmp: 1, endAmp: 0 };
+
+  it("turns the drag's heights into percent of the part's height", () => {
+    const g = gradientFromStroke({ z: 10 }, { z: 40 }, frame, params);
+    expect([g.from, g.to]).toEqual([20, 80]);
+  });
+
+  it("puts full fuzz at the bottom when dragging up", () => {
+    const g = gradientFromStroke({ z: 10 }, { z: 40 }, frame, params);
+    expect([g.startAmp, g.endAmp]).toEqual([1, 0]);
+  });
+
+  it("puts full fuzz at the top when dragging down", () => {
+    const g = gradientFromStroke({ z: 40 }, { z: 10 }, frame, params);
+    expect([g.from, g.to, g.startAmp, g.endAmp]).toEqual([20, 80, 0, 1]);
+  });
+
+  it("keeps a gentler gradient's amounts", () => {
+    const g = gradientFromStroke({ z: 10 }, { z: 40 }, frame, { startAmp: 0.2, endAmp: 0.7 });
+    expect([g.startAmp, g.endAmp]).toEqual([0.7, 0.2]);
+  });
+
+  it("ignores a click without a drag", () => {
+    expect(gradientFromStroke({ z: 10 }, { z: 10.2 }, frame, params)).toBeNull();
+  });
+});
+
+describe("tightening a gradient", () => {
+  it("shrinks the ramp about its middle", () => {
+    expect(tightenGradient({ from: 20, to: 80 }, 1)).toEqual({ from: 24.5, to: 75.5 });
+  });
+
+  it("widens it when scrolled the other way", () => {
+    expect(tightenGradient({ from: 40, to: 60 }, -1)).toEqual({ from: 38.2, to: 61.8 });
+  });
+
+  it("never squeezes the ramp to nothing", () => {
+    expect(tightenGradient({ from: 49, to: 51 }, 40)).toEqual({ from: 49.5, to: 50.5 });
+  });
+
+  it("keeps a widened ramp on the part", () => {
+    expect(tightenGradient({ from: 80, to: 100 }, -6)).toEqual({ from: 47, to: 100 });
   });
 });
 

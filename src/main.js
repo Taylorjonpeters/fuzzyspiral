@@ -3,7 +3,7 @@
 import { createPreview } from "./view/preview.js";
 import { mountPanel } from "./view/panel.js";
 import { DEFAULT_FUZZ } from "./core/fuzz.js";
-import { PRESETS, spiralFromStroke } from "./core/patterns.js";
+import { PRESETS, spiralFromStroke, gradientFromStroke, tightenGradient } from "./core/patterns.js";
 
 const STORE = "fuzzyspiral.settings.v1";
 const $ = (id) => document.getElementById(id);
@@ -41,7 +41,13 @@ const call = (msg, transfer = []) => new Promise((resolve, reject) => {
   worker.postMessage({ ...msg, id }, transfer);
 });
 
-const status = (t) => { $("status").textContent = t; $("status").className = "status"; };
+// The header line shows the current instruction or result; a background preview refresh shows
+// "fuzzing…" over it briefly without wiping it, so tool hints survive every slider tweak.
+let statusText = "";
+let busy = false;
+const renderStatus = () => { $("status").textContent = busy ? "fuzzing…" : statusText; };
+const status = (t) => { statusText = t; renderStatus(); };
+const setBusy = (b) => { busy = b; renderStatus(); };
 
 /** Errors stop the user, so they get a modal rather than a line in the header. */
 function showError(title, message) {
@@ -61,7 +67,7 @@ let previewTimer = 0;
 async function refreshPreview() {
   if (!state.info) return;
   const seq = ++previewSeq;
-  status("fuzzing…");
+  setBusy(true);
   try {
     const d = await call({ type: "preview", settings: settingsSnapshot(), view: state.view });
     if (seq !== previewSeq) return;
@@ -70,8 +76,9 @@ async function refreshPreview() {
     const s = d.stats;
     $("stats").textContent = `${s.runsChanged.toLocaleString()} / ${state.info.runs.toLocaleString()} walls fuzzed`;
     $("stats").title = `${s.runsChanged.toLocaleString()} of ${state.info.runs.toLocaleString()} outer-wall runs changed. Moves: ${s.pointsBefore.toLocaleString()} → ${s.pointsAfter.toLocaleString()}.`;
-    status("");
+    setBusy(false);
   } catch (e) {
+    setBusy(false);
     showError("Preview failed", e.message);
   }
 }
@@ -86,6 +93,7 @@ const panel = mountPanel($("panel"), state, {
   savePattern,
   loadPattern: () => $("settingsFile").click(),
   drawSpiral,
+  drawGradient,
   pickCenter: () => {
     state.picking = true;
     $("stage").classList.add("picking");
@@ -104,23 +112,71 @@ preview.canvas.addEventListener("click", (e) => {
   changed();
 });
 
-// Drawing a spiral: the stroke sets pitch, twist and rotation live while dragging.
-function drawSpiral(layer) {
-  if (!state.info) return showError("Open a file first", "Load a sliced .gcode.3mf or .gcode, then draw the spiral on it.");
-  status("drag along the part where one stripe should run · Esc cancels");
-  document.querySelectorAll("button.draw").forEach((b) => b.classList.add("on"));
+// Drawing on the part: a drag sets a layer's parameters live through `tool.solve`, then the
+// scroll wheel fine-tunes them through `tool.wheel` until the user clicks or presses Enter.
+/**
+ * @param {import('./core/patterns.js').MaskLayer} layer
+ * @param {{drag: string, adjust: () => string,
+ *          solve: (a: any, b: any, frame: any, params: any) => object | null,
+ *          wheel: (steps: number, a: any, b: any, frame: any) => void,
+ *          rings?: (frame: any) => [number, number] | null}} tool
+ */
+function drawOnModel(layer, tool) {
+  if (!state.info) return showError("Open a file first", "Load a sliced .gcode.3mf or .gcode, then draw on it.");
+  status(`${tool.drag} · Esc cancels`);
+  // Light up the button that started this; the panel rebuild at the end clears it.
+  if (document.activeElement?.matches("button.draw")) document.activeElement.classList.add("on");
   const before = { ...layer.params };
+  const adjustHint = () => status(`${tool.adjust()} · click or Enter when done`);
   preview.startStroke({
     onMove(a, b, frame) {
-      const s = spiralFromStroke(a, b, frame, layer.params);
+      const s = tool.solve(a, b, frame, layer.params);
       if (s) { Object.assign(layer.params, s); changed(); }
     },
+    onRelease: adjustHint,
+    onWheel(steps, a, b, frame) {
+      tool.wheel(steps, a, b, frame);
+      panel.refresh();
+      adjustHint();
+      changed();
+    },
     onEnd(a) {
-      // Esc or a press that missed the part puts the spiral back as it was.
+      // Esc before letting go, or a press that missed the part, puts the layer back as it was.
       if (!a) Object.assign(layer.params, before);
       status("");
       panel.refresh();
       changed();
+    },
+  }, { rings: tool.rings });
+}
+
+// Declarations, not consts: the panel is handed these before this point in the file.
+function drawSpiral(layer) {
+  const p = layer.params;
+  drawOnModel(layer, {
+    drag: "drag along the part where one stripe should run",
+    adjust: () => `${p.starts} start${p.starts === 1 ? "" : "s"} · scroll for more or fewer`,
+    solve: spiralFromStroke,
+    wheel(steps, a, b, frame) {
+      p.starts = Math.max(1, Math.min(32, p.starts + steps));
+      // Re-solve so a stripe still runs along the drawn stroke with the new count.
+      const s = spiralFromStroke(a, b, frame, p);
+      if (s) Object.assign(p, s);
+    },
+  });
+}
+
+function drawGradient(layer) {
+  const p = layer.params;
+  drawOnModel(layer, {
+    drag: "drag from where fuzz is strongest to where it fades out",
+    adjust: () => `fade over ${Math.round(p.to - p.from)}% of the height · scroll to tighten or loosen`,
+    solve: gradientFromStroke,
+    wheel: (steps) => Object.assign(p, tightenGradient(p, steps)),
+    // The rings follow the layer, not the cursor, so they show the falloff scrolling sets.
+    rings(frame) {
+      const z = (pct) => frame.minZ + (pct / 100) * (frame.maxZ - frame.minZ);
+      return p.startAmp >= p.endAmp ? [z(p.from), z(p.to)] : [z(p.to), z(p.from)];
     },
   });
 }
@@ -183,6 +239,7 @@ async function openFile(file) {
     const { info } = await call({ type: "load", name: file.name, bytes: buf }, [buf]);
     preview.resetFraming();
     showInfo(info);
+    status("");
     await refreshPreview();
   } catch (e) {
     showError("Couldn't open the file", e.message);
@@ -221,8 +278,10 @@ async function doExport(format) {
     const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: outName(format) });
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-    status(`saved ${a.download}`);
-    setTimeout(() => status(""), 4000);
+    const saved = `saved ${a.download}`;
+    status(saved);
+    // Clear it later, unless something else (a drawing tool's hint) has taken the line since.
+    setTimeout(() => { if (statusText === saved) status(""); }, 4000);
   } catch (e) {
     showError("Couldn't export", e.message);
   }

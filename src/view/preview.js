@@ -43,6 +43,25 @@ export function createPreview(host) {
   const strokeEnds = new THREE.Points(strokeGeom, new THREE.PointsMaterial({ ...strokeMat, size: 9, sizeAttenuation: false }));
   for (const o of [strokeLine, strokeEnds]) { o.visible = false; o.renderOrder = 10; o.frustumCulled = false; scene.add(o); }
 
+  // Height rings for the gradient drag: orange where fuzz is strongest, blue where it fades out.
+  // Thin tori rather than lines, since WebGL draws every line one pixel wide.
+  const rings = [ON, OFF].map((c) => {
+    const ring = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: 0.9 }));
+    ring.visible = false; ring.renderOrder = 11; ring.frustumCulled = false;
+    scene.add(ring);
+    return ring;
+  });
+  const placeRing = (ring, f, z) => {
+    const r = f.r + 1.5;
+    if (ring.userData.r !== r) {
+      ring.geometry.dispose();
+      ring.geometry = new THREE.TorusGeometry(r, Math.max(0.25, r * 0.006), 6, 128);
+      ring.userData.r = r;
+    }
+    ring.position.set(f.x, f.y, z);
+    ring.visible = true;
+  };
+
   /** @type {Record<string, {x:number,y:number,r:number,minZ:number,maxZ:number}>} */
   let frames = {};
   let layerStart = new Int32Array(2);
@@ -86,21 +105,25 @@ export function createPreview(host) {
     const B = 2 * (d.x * ox + d.y * oy), C = ox * ox + oy * oy - f.r * f.r;
     const disc = B * B - 4 * A * C;
     if (disc < 0) return null;
-    for (const t of [(-B - Math.sqrt(disc)) / (2 * A), (-B + Math.sqrt(disc)) / (2 * A)]) {
-      const z = o.z + t * d.z;
-      if (t > 0 && z >= f.minZ - 0.5 && z <= f.maxZ + 0.5) return { t, p: rr.at(t, new THREE.Vector3()) };
-    }
-    return null;
+    // Only the near side: above or below the part, the far wall is not what the cursor is over,
+    // and a drag should keep following the side facing the camera.
+    const t = (-B - Math.sqrt(disc)) / (2 * A);
+    const z = o.z + t * d.z;
+    return t > 0 && z >= f.minZ - 0.5 && z <= f.maxZ + 0.5 ? { t, p: rr.at(t, new THREE.Vector3()) } : null;
   }
 
-  /** Off the part, follow the cursor on the vertical plane through the object's axis that faces the camera. */
-  function hitAxisPlane(rr, f) {
-    const n = new THREE.Vector3(camera.position.x - f.x, camera.position.y - f.y, 0);
+  /**
+   * Off the part, follow the cursor on the upright plane through the press point that faces the
+   * camera. At that depth, up on screen is always up the part, even from a high viewing angle.
+   */
+  function hitPressPlane(rr, anchor) {
+    const n = new THREE.Vector3(camera.position.x - anchor.x, camera.position.y - anchor.y, 0);
     if (n.lengthSq() < 1e-9) return null;
-    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n.normalize(), new THREE.Vector3(f.x, f.y, 0));
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n.normalize(), anchor);
     const p = rr.intersectPlane(plane, new THREE.Vector3());
     return p ? { t: 0, p } : null;
   }
+
 
   return {
     /**
@@ -161,22 +184,36 @@ export function createPreview(host) {
     },
 
     /**
-     * Let the user drag a stroke across a part. Orbiting pauses until the stroke ends.
-     * @param {{onMove: (a: THREE.Vector3, b: THREE.Vector3, frame: {x:number,y:number}) => void,
-     *          onEnd: (a: THREE.Vector3 | null, b: THREE.Vector3 | null, frame: {x:number,y:number} | null) => void}} cb
+     * Let the user drag a stroke across a part, then fine-tune it with the scroll wheel.
+     *
+     * Phases: armed (waiting for a press on a part) → dragging → adjusting. Scrolling works while
+     * dragging and after release; a click or Esc after release keeps the result, Esc while still
+     * armed or dragging cancels it. Orbiting pauses until the tool ends.
+     *
+     * @param {{onMove: (a: THREE.Vector3, b: THREE.Vector3, frame: any) => void,
+     *          onWheel?: (steps: number, a: THREE.Vector3, b: THREE.Vector3, frame: any) => void,
+     *          onRelease?: () => void,
+     *          onEnd: (a: THREE.Vector3 | null, b: THREE.Vector3 | null, frame: any) => void}} cb
+     * @param {{rings?: (frame: any) => [number, number] | null}} [opts]
+     *   rings: heights to mark around the part, strongest first; re-read after every change
      */
-    startStroke(cb) {
+    startStroke(cb, opts = {}) {
       const el = renderer.domElement;
       controls.enabled = false;
       el.style.cursor = "crosshair";
       let key = null, a = null, b = null;
+      let phase = "armed";
+      let wheelAcc = 0;
       const pts = strokeGeom.attributes.position;
       const show = () => {
         pts.setXYZ(0, a.x, a.y, a.z); pts.setXYZ(1, b.x, b.y, b.z);
         pts.needsUpdate = true;
         strokeLine.visible = strokeEnds.visible = true;
+        const zs = opts.rings?.(frames[key]);
+        if (zs) { placeRing(rings[0], frames[key], zs[0]); placeRing(rings[1], frames[key], zs[1]); }
       };
       const down = (e) => {
+        if (phase === "adjusting") { e.stopPropagation(); finish(true); return; }
         const rr = setRay(e.clientX, e.clientY);
         let best = null;
         for (const [k, f] of Object.entries(frames)) {
@@ -185,35 +222,62 @@ export function createPreview(host) {
         }
         if (!best) return;
         key = best.k; a = best.p; b = a.clone();
-        el.setPointerCapture(e.pointerId);
+        phase = "dragging";
+        // Keeps the drag tracking if the cursor leaves the canvas; not essential if refused.
+        try { el.setPointerCapture(e.pointerId); } catch {}
         show();
       };
       const move = (e) => {
-        if (!a) return;
+        if (phase !== "dragging") return;
         const rr = setRay(e.clientX, e.clientY);
         const f = frames[key];
-        const h = hitCylinder(rr, f) ?? hitAxisPlane(rr, f);
+        const h = hitCylinder(rr, f) ?? hitPressPlane(rr, a);
         if (!h) return;
         b = h.p;
-        show();
         cb.onMove(a, b, frames[key]);
+        show();
+      };
+      const up = () => {
+        if (phase !== "dragging") return;
+        if (!cb.onWheel) { finish(true); return; }
+        phase = "adjusting";
+        el.style.cursor = "ns-resize";
+        cb.onRelease?.();
+      };
+      // One step per wheel notch; trackpads send many small deltas, so they're accumulated.
+      const wheel = (e) => {
+        if (phase === "armed" || !cb.onWheel) return;
+        e.preventDefault();
+        // A mouse notch is ~100px (or 3 lines in Firefox), so one notch is one step.
+        wheelAcc += e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+        const steps = Math.trunc(wheelAcc / 100);
+        if (!steps) return;
+        wheelAcc -= steps * 100;
+        cb.onWheel(-steps, a, b, frames[key]); // scrolling up (negative delta) is +1
+        show();
+      };
+      const key_ = (e) => {
+        if (e.key === "Escape") finish(phase === "adjusting");
+        else if (e.key === "Enter" && phase === "adjusting") finish(true);
       };
       const finish = (ok) => {
-        el.removeEventListener("pointerdown", down);
+        el.removeEventListener("pointerdown", down, true);
         el.removeEventListener("pointermove", move);
         el.removeEventListener("pointerup", up);
-        removeEventListener("keydown", esc);
+        el.removeEventListener("wheel", wheel);
+        removeEventListener("keydown", key_);
         el.style.cursor = "";
         controls.enabled = true;
         strokeLine.visible = strokeEnds.visible = false;
+        for (const ring of rings) ring.visible = false;
         cb.onEnd(ok ? a : null, ok ? b : null, ok && key != null ? frames[key] : null);
       };
-      const up = () => { if (a) finish(true); };
-      const esc = (e) => { if (e.key === "Escape") finish(false); };
-      el.addEventListener("pointerdown", down);
+      // Capture phase, so the click that ends adjusting never reaches the orbit controls.
+      el.addEventListener("pointerdown", down, true);
       el.addEventListener("pointermove", move);
       el.addEventListener("pointerup", up);
-      addEventListener("keydown", esc);
+      el.addEventListener("wheel", wheel, { passive: false });
+      addEventListener("keydown", key_);
     },
 
     canvas: renderer.domElement,

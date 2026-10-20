@@ -147,7 +147,8 @@ const more = (kids, label = "More") => {
  * @param {HTMLElement} root
  * @param {{settings: any}} state
  * @param {{changed: () => void, pickCenter: () => void, savePattern: () => void, loadPattern: () => void,
- *          drawSpiral: (layer: import('../core/patterns.js').MaskLayer) => void}} actions
+ *          drawSpiral: (layer: import('../core/patterns.js').MaskLayer) => void,
+ *          drawGradient: (layer: import('../core/patterns.js').MaskLayer) => void}} actions
  */
 export function mountPanel(root, state, actions) {
   const stackHost = h("div", { class: "stack" });
@@ -213,7 +214,9 @@ export function mountPanel(root, state, actions) {
 
     const draw = L.type === "spiral"
       ? h("button", { class: "draw", title: "Drag across the part in the preview along the line one stripe should follow. Sets pitch, twist and rotation.", onclick: () => actions.drawSpiral(L) }, "✎ Draw on model")
-      : null;
+      : L.type === "gradient"
+        ? h("button", { class: "draw", title: "Drag up or down the part in the preview, from where the fuzz should be strongest to where it should fade out. Sets the start and end heights.", onclick: () => actions.drawGradient(L) }, "✎ Set on model")
+        : null;
     const body = h("div", { class: "card-body" }, draw, PARAMS[L.type].map((p) => control(L.params, p, changedP)), extra);
     return h("div", { class: `card${L.enabled ? "" : " off"}` }, head, L.enabled ? body : null);
   };

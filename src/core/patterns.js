@@ -215,3 +215,49 @@ export function spiralFromStroke(a, b, center, params, limits = { minPitch: 2, m
   const phase = frac(params.duty / 2 - params.starts * (sign * turnOf(a) - a.z / pitch));
   return { pitch: Math.round(pitch * 10) / 10, hand, phase: Math.round(phase * 1000) / 1000 };
 }
+
+/**
+ * Gradient settings from a stroke dragged up or down the part: full fuzz where the drag starts,
+ * fading to none where it ends. Heights become percentages of the object's printed height, the
+ * unit the gradient layer works in. The layer's own amounts are kept as the strong and weak ends
+ * when they differ, so a gentler gradient stays gentle.
+ *
+ * @param {{z:number}} a  where the fuzz is strongest
+ * @param {{z:number}} b  where it has faded out
+ * @param {{minZ:number, maxZ:number}} frame
+ * @param {{startAmp:number, endAmp:number}} params
+ * @returns {{from:number, to:number, startAmp:number, endAmp:number} | null}  null for a stroke too short to read
+ */
+export function gradientFromStroke(a, b, frame, params) {
+  const h = frame.maxZ - frame.minZ;
+  if (h <= 0 || Math.abs(b.z - a.z) < 0.5) return null;
+  const pct = (z) => Math.round(clamp01((z - frame.minZ) / h) * 1000) / 10;
+  let strong = Math.max(params.startAmp, params.endAmp);
+  let weak = Math.min(params.startAmp, params.endAmp);
+  if (strong === weak) { strong = 1; weak = 0; }
+  const up = b.z > a.z;
+  return {
+    from: pct(Math.min(a.z, b.z)),
+    to: pct(Math.max(a.z, b.z)),
+    // The gradient runs bottom to top, so a downward drag puts the strong end on top.
+    startAmp: up ? strong : weak,
+    endAmp: up ? weak : strong,
+  };
+}
+
+/**
+ * Tighten (steps > 0) or loosen (steps < 0) a gradient's falloff: the ramp between its start and
+ * end heights shrinks or grows about its middle, 15% per step, staying inside the part.
+ * @param {{from:number, to:number}} params  heights in percent of the part
+ * @param {number} steps
+ * @returns {{from:number, to:number}}
+ */
+export function tightenGradient(params, steps) {
+  const mid = (params.from + params.to) / 2;
+  let half = (Math.abs(params.to - params.from) / 2) * Math.pow(0.85, steps);
+  half = Math.max(0.5, Math.min(50, half));
+  // Keep the whole ramp on the part: slide the middle in if it would hang off either end.
+  const m = Math.max(half, Math.min(100 - half, mid));
+  const r = (v) => Math.round(v * 10) / 10;
+  return { from: r(m - half), to: r(m + half) };
+}
