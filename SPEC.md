@@ -46,6 +46,15 @@ byte-identical and in its original order, and PNGs are stored uncompressed.
 - Unmoved interior samples are dropped as collinear. A segment whose start, end and samples all
   have mask 0 is copied as-is. A run with no moved point is emitted as its original lines.
 - `skipFirstLayer` (default on) leaves layer 1 smooth for bed adhesion.
+- `walls: 'outermost'` is geometric, not topological: a wall point is fuzzed only when nothing
+  else in its layer and object lies further out along the ray from the pattern center (within
+  1.5 line widths). `outerProfiles` bins the furthest radius per direction. Hole counting can't
+  do this job: the KDI lamp's base has a cable slot running from the rim to the socket tube, so
+  rim, slot walls and tube are all one outline. The limit is parts that fold back around the
+  center, where a face hidden behind another at the same angle counts as inside.
+- Classification stitches runs that continue exactly where the previous one stopped, in the same
+  layer and object, into one loop. Bambu interrupts walls with `M73` progress and `M106` fan
+  lines, and the parser ends a run at every command so those lines stay in place.
 - `walls: 'contour'` leaves the outer walls of holes smooth, like Bambu's "Contour" fuzzy skin
   option. It uses the same hole test as the air side, so open runs always count as outside.
 
@@ -64,6 +73,7 @@ point picked on the bed. `t` is height as a fraction of the object's outer-wall 
 - bands: `u = frac(z/period + phase)`
 - checker: XOR of a stripe band and a Z band
 - zrange: inclusive range of layers, or millimetres with a soft edge
+- radius: distance `r` from the pattern center between `min` and `max` mm (`max` 0 = no limit), soft edge in mm
 - gradient: lerp from `startAmp` to `endAmp` between two `t` percentages
 
 ## 5. Known gaps

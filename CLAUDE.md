@@ -33,7 +33,8 @@ the next session. Read it before changing `core/`.
 - `src/core/emit.js`: rebuilds the G-code text
 - `src/io/threemf.js`: unzip, md5 check, repack
 - `src/worker.js`: holds the parsed file; preview and export run here
-- `src/view/`: three.js preview and the sidebar; `src/main.js` is wiring only
+- `src/view/`: three.js preview (lines, plus `beads.js` for the instanced solid view), the sidebar,
+  and `fuzzSwatch.js` (close-up beside the fuzz sliders); `src/main.js` is wiring only
 
 ## Running and verifying
 

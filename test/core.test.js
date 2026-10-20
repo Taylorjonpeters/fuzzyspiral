@@ -4,9 +4,9 @@ import { zipSync, strToU8, strFromU8, unzipSync } from "fflate";
 import { parseGcode } from "../src/core/parse.js";
 import { applyFuzz } from "../src/core/fuzz.js";
 import { emitGcode } from "../src/core/emit.js";
-import { evalMask, makeLayer, band } from "../src/core/patterns.js";
+import { evalMask, makeLayer, band, spiralFromStroke } from "../src/core/patterns.js";
 import { readArchive, plateGcode, checkMd5, writeArchive } from "../src/io/threemf.js";
-import { bambuGcode, prusaGcode } from "./synth.js";
+import { bambuGcode, prusaGcode, lampGcode, slottedBaseGcode } from "./synth.js";
 
 const everywhere = { fuzz: { seed: 7 }, center: { mode: "auto" }, stack: [makeLayer("constant")] };
 const nowhere = { fuzz: { seed: 7 }, center: { mode: "auto" }, stack: [] };
@@ -135,6 +135,96 @@ describe("fuzz", () => {
     const out = applyFuzz(p, { fuzz: { seed: 1 }, center: { mode: "auto" }, stack }).out;
     const changedLayers = [...new Set(p.runs.filter((_, k) => out[k]).map((r) => r.layer))];
     expect(changedLayers).toEqual([3, 4]);
+  });
+});
+
+describe("lamp walls", () => {
+  const lamp = parseGcode(lampGcode());
+  // Layer 2 holds runs 4..7: shell outside, shell inside, tube outside, tube bore.
+  const changed = (settings) => applyFuzz(lamp, settings).out.slice(4, 8).map((o) => o !== null);
+
+  it("fuzzes only the shell's outside when set to outermost skin", () => {
+    expect(changed({ ...everywhere, fuzz: { seed: 1, walls: "outermost" } })).toEqual([true, false, false, false]);
+  });
+
+  it("still fuzzes the socket tube's outside when only holes are skipped", () => {
+    expect(changed({ ...everywhere, fuzz: { seed: 1, walls: "contour" } })).toEqual([true, false, true, false]);
+  });
+
+  it("keeps walls inside the distance-from-center radius smooth", () => {
+    const stack = [makeLayer("radius", { feather: 0, params: { min: 20, max: 0 } })];
+    expect(changed({ fuzz: { seed: 1 }, center: { mode: "auto" }, stack })).toEqual([true, true, false, false]);
+  });
+});
+
+describe("outermost skin on a slotted lamp base", () => {
+  const base = parseGcode(slottedBaseGcode());
+  const res = applyFuzz(base, { ...everywhere, fuzz: { seed: 1, walls: "outermost" } });
+  const moved = res.out.flatMap((o) => o ?? []).filter((s) => s.amp > 0);
+  const radius = (s) => Math.hypot(s.to.x - 128, s.to.y - 128);
+
+  it("fuzzes the rim", () => {
+    expect(moved.length).toBeGreaterThan(100);
+  });
+
+  it("leaves the slot walls and the central tube smooth", () => {
+    expect(Math.min(...moved.map(radius))).toBeGreaterThan(39);
+  });
+});
+
+describe("walls split mid-loop", () => {
+  // Layer 2's walls are the 5th–8th outer walls; the 6th is the shell's inside (r 38), a hole.
+  const lines = lampGcode({ layers: 2 }).split("\n");
+  const walls = lines.flatMap((l, i) => (l === "; FEATURE: Outer wall" ? [i] : []));
+  lines.splice(walls[5] + 30, 0, "M73 P50 R10");
+  const p = parseGcode(lines.join("\n"));
+
+  it("arrives as two runs", () => {
+    expect(p.runs.length).toBe(9);
+  });
+
+  it("still treats the split wall as a hole", () => {
+    const out = applyFuzz(p, { ...everywhere, fuzz: { seed: 1, walls: "contour" } }).out;
+    const fuzzedRadii = p.runs
+      .map((r, i) => ({ r, o: out[i] }))
+      .filter((x) => x.r.layer === 2 && x.o)
+      .map((x) => Math.round(Math.hypot(x.r.segs[0].to.x - 128, x.r.segs[0].to.y - 128)));
+    expect([...new Set(fuzzedRadii)].sort((a, b) => a - b)).toEqual([8, 40]);
+  });
+});
+
+describe("spiral from a stroke", () => {
+  const center = { x: 0, y: 0 };
+  const params = { starts: 3, duty: 0.4 };
+  const onCyl = (turn, z) => ({ x: 20 * Math.cos(turn * 2 * Math.PI), y: 20 * Math.sin(turn * 2 * Math.PI), z });
+
+  it("reads pitch as height climbed per full turn", () => {
+    expect(spiralFromStroke(onCyl(0, 0), onCyl(0.25, 10), center, params).pitch).toBe(40);
+  });
+
+  it("is right-handed when the stroke rises counter-clockwise", () => {
+    expect(spiralFromStroke(onCyl(0, 0), onCyl(0.25, 10), center, params).hand).toBe("right");
+  });
+
+  it("is left-handed when the stroke rises clockwise", () => {
+    expect(spiralFromStroke(onCyl(0, 0), onCyl(-0.25, 10), center, params).hand).toBe("left");
+  });
+
+  it("takes the short way across the seam at the -X side", () => {
+    expect(spiralFromStroke(onCyl(0.45, 0), onCyl(0.55, 4), center, params).pitch).toBe(40);
+  });
+
+  it("puts a stripe through both ends of the stroke", () => {
+    const a = onCyl(0.1, 3), b = onCyl(0.3, 11);
+    const s = spiralFromStroke(a, b, center, params);
+    const stack = [makeLayer("spiral", { feather: 0, params: { ...params, ...s } })];
+    const sample = (p) => ({ ...p, layer: 10, t: 0.5, r: 20, theta: Math.atan2(p.y, p.x) });
+    expect(evalMask(stack, sample(a))).toBe(1);
+    expect(evalMask(stack, sample(b))).toBe(1);
+  });
+
+  it("ignores a click without a drag", () => {
+    expect(spiralFromStroke(onCyl(0, 0), onCyl(0.001, 0.1), center, params)).toBeNull();
   });
 });
 

@@ -32,6 +32,8 @@ import { linearizeArc } from "./geometry.js";
  * @property {Seg[]} segs
  * @property {number} fIn       feedrate in effect before the run
  * @property {number} fOut      feedrate in effect after the run
+ * @property {number} width     extrusion width from the slicer's comments, mm (preview only)
+ * @property {number} height    layer height from the slicer's comments, mm (preview only)
  * @property {boolean} absE     file was in M82 absolute-E mode during this run
  * @property {number} eIn       absolute E before the run (absE only)
  */
@@ -55,6 +57,8 @@ const OUTER = [
 ];
 const FEATURE = /^;\s*(FEATURE|TYPE):/i;
 const LAYER = /^;\s*(CHANGE_LAYER|LAYER_CHANGE)\b|^;LAYER:-?\d+/;
+const WIDTH = /^;\s*(?:LINE_)?WIDTH:\s*([\d.]+)/;          // Bambu/Orca "; LINE_WIDTH:", Prusa ";WIDTH:"
+const HEIGHT = /^;\s*(?:LAYER_)?HEIGHT:\s*([\d.]+)/;        // Bambu/Orca "; LAYER_HEIGHT:", Prusa ";HEIGHT:"
 const WIPE_START = /^;\s*WIPE_START/;
 const WIPE_END = /^;\s*WIPE_END/;
 const OBJ_START = [
@@ -115,6 +119,8 @@ export function parseGcode(text) {
   // Some slicers write two layer markers back to back; count a layer once per move.
   let movedSinceLayer = true;
   let obj = "";
+  // Cura writes neither; these are typical 0.4 mm nozzle values.
+  let width = 0.42, height = 0.2;
   let arcCount = 0;
 
   /** @type {Run[]} */
@@ -137,6 +143,8 @@ export function parseGcode(text) {
       // Any comment ends a run. Runs only ever span move lines, so the replaced range
       // never swallows a marker that some other tool (or the printer) reads.
       close();
+      const wm = t.match(WIDTH); if (wm) width = parseFloat(wm[1]) || width;
+      const hm = t.match(HEIGHT); if (hm) height = parseFloat(hm[1]) || height;
       if (LAYER.test(t)) { if (movedSinceLayer) layer++; movedSinceLayer = false; }
       else if (FEATURE.test(t)) outer = OUTER.some((r) => r.test(t));
       else if (WIPE_START.test(t)) wipe = true;
@@ -183,7 +191,7 @@ export function parseGcode(text) {
     // Relative XY (G91) runs are left alone: offsetting one point would shift every later one.
     if (outer && !wipe && absXYZ && (extruding || (feedOnly && run))) {
       if (!run) {
-        run = { start: i, end: i, layer, obj, from: { x, y, z }, segs: [], fIn: f, fOut: f, absE, eIn: e };
+        run = { start: i, end: i, layer, obj, from: { x, y, z }, segs: [], fIn: f, fOut: f, absE, eIn: e, width, height };
       }
       run.end = i;
       run.fOut = nf;

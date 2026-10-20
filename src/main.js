@@ -3,7 +3,7 @@
 import { createPreview } from "./view/preview.js";
 import { mountPanel } from "./view/panel.js";
 import { DEFAULT_FUZZ } from "./core/fuzz.js";
-import { PRESETS } from "./core/patterns.js";
+import { PRESETS, spiralFromStroke } from "./core/patterns.js";
 
 const STORE = "fuzzyspiral.settings.v1";
 const $ = (id) => document.getElementById(id);
@@ -41,7 +41,16 @@ const call = (msg, transfer = []) => new Promise((resolve, reject) => {
   worker.postMessage({ ...msg, id }, transfer);
 });
 
-const status = (t, kind = "") => { $("status").textContent = t; $("status").className = `status ${kind}`; };
+const status = (t) => { $("status").textContent = t; $("status").className = "status"; };
+
+/** Errors stop the user, so they get a modal rather than a line in the header. */
+function showError(title, message) {
+  status("");
+  $("errorTitle").textContent = title;
+  $("errorMessage").textContent = message ? message[0].toUpperCase() + message.slice(1) : "";
+  const d = $("errorDialog");
+  if (!d.open) d.showModal();
+}
 const settingsSnapshot = () => JSON.parse(JSON.stringify(state.settings));
 
 const preview = createPreview($("stage"));
@@ -63,7 +72,7 @@ async function refreshPreview() {
     $("stats").title = `${s.runsChanged.toLocaleString()} of ${state.info.runs.toLocaleString()} outer-wall runs changed. Moves: ${s.pointsBefore.toLocaleString()} → ${s.pointsAfter.toLocaleString()}.`;
     status("");
   } catch (e) {
-    status(e.message, "err");
+    showError("Preview failed", e.message);
   }
 }
 const changed = () => {
@@ -74,6 +83,9 @@ const changed = () => {
 
 const panel = mountPanel($("panel"), state, {
   changed,
+  savePattern,
+  loadPattern: () => $("settingsFile").click(),
+  drawSpiral,
   pickCenter: () => {
     state.picking = true;
     $("stage").classList.add("picking");
@@ -92,6 +104,27 @@ preview.canvas.addEventListener("click", (e) => {
   changed();
 });
 
+// Drawing a spiral: the stroke sets pitch, twist and rotation live while dragging.
+function drawSpiral(layer) {
+  if (!state.info) return showError("Open a file first", "Load a sliced .gcode.3mf or .gcode, then draw the spiral on it.");
+  status("drag along the part where one stripe should run · Esc cancels");
+  document.querySelectorAll("button.draw").forEach((b) => b.classList.add("on"));
+  const before = { ...layer.params };
+  preview.startStroke({
+    onMove(a, b, frame) {
+      const s = spiralFromStroke(a, b, frame, layer.params);
+      if (s) { Object.assign(layer.params, s); changed(); }
+    },
+    onEnd(a) {
+      // Esc or a press that missed the part puts the spiral back as it was.
+      if (!a) Object.assign(layer.params, before);
+      status("");
+      panel.refresh();
+      changed();
+    },
+  });
+}
+
 // Layer range sliders.
 function applyLayerRange() {
   let lo = +$("layerLo").value, hi = +$("layerHi").value;
@@ -109,6 +142,16 @@ for (const b of document.querySelectorAll("[data-view]")) {
     refreshPreview();
   });
 }
+
+// Lines or solid beads. Kept per viewer, since it's a viewing preference rather than a setting.
+const DISPLAY_KEY = "fuzzyspiral.display";
+function setDisplay(mode) {
+  preview.setDisplay(mode);
+  for (const o of document.querySelectorAll("[data-display]")) o.classList.toggle("on", o.dataset.display === mode);
+  try { localStorage.setItem(DISPLAY_KEY, mode); } catch {}
+}
+for (const b of document.querySelectorAll("[data-display]")) b.addEventListener("click", () => setDisplay(b.dataset.display));
+try { setDisplay(localStorage.getItem(DISPLAY_KEY) === "solid" ? "solid" : "lines"); } catch { setDisplay("lines"); }
 
 function showInfo(info) {
   state.info = info;
@@ -142,7 +185,7 @@ async function openFile(file) {
     showInfo(info);
     await refreshPreview();
   } catch (e) {
-    status(e.message, "err");
+    showError("Couldn't open the file", e.message);
   }
 }
 
@@ -181,7 +224,7 @@ async function doExport(format) {
     status(`saved ${a.download}`);
     setTimeout(() => status(""), 4000);
   } catch (e) {
-    status(e.message, "err");
+    showError("Couldn't export", e.message);
   }
 }
 $("export3mf").addEventListener("click", () => doExport("3mf"));
@@ -206,6 +249,6 @@ $("settingsFile").addEventListener("change", async (e) => {
     panel.refresh();
     changed();
   } catch (err) {
-    status(`couldn't load pattern: ${err.message}`, "err");
+    showError("Couldn't load the pattern", err.message);
   }
 });

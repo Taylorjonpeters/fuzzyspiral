@@ -41,6 +41,10 @@
             <button data-view="original" title="Unchanged walls, colored by where the pattern lands">Pattern</button>
             <button data-view="fuzzed" class="on" title="The toolpath that will be exported. Orange is fuzzed, blue is smooth.">Result</button>
           </div>
+          <div class="seg">
+            <button data-display="lines" class="on" title="Toolpath centerlines: fast, and shows every point">Lines</button>
+            <button data-display="solid" title="Walls drawn as printed beads, to judge how the surface will look">Solid</button>
+          </div>
           <label class="layers" title="Show a range of layers">
             <span id="layerLabel">layers</span>
             <input id="layerLo" type="range" min="1" max="1" value="1" />
@@ -50,6 +54,11 @@
         </div>
       </section>
     </div>
+    <dialog id="errorDialog" class="error-dialog" aria-labelledby="errorTitle">
+      <h2 id="errorTitle"></h2>
+      <p id="errorMessage"></p>
+      <form method="dialog"><button class="primary" autofocus>OK</button></form>
+    </dialog>
     <dialog id="helpDialog" class="help">
       <form method="dialog"><button class="icon close" title="Close">×</button></form>
       <h2>How it works</h2>

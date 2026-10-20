@@ -52,12 +52,15 @@ function previewBuffers(settings, view) {
   p.runs.forEach((r, k) => { n += view === "fuzzed" && out[k] ? out[k].length : r.segs.length; });
   const pos = new Float32Array(n * 6);
   const amp = new Float32Array(n * 2);
+  // Per segment: layer, bead width, bead height. The solid view draws each segment as a bead.
+  const bead = new Float32Array(n * 3);
   const layerStart = new Int32Array(p.layerCount + 2).fill(-1);
   let v = 0;
   p.runs.forEach((r, k) => {
     for (let L = 0; L <= r.layer; L++) if (layerStart[L] < 0) layerStart[L] = v;
     let prev = r.from;
     let prevAmp = 0;
+    const seg0 = v / 2;
     if (view === "fuzzed" && out[k]) {
       for (const s of out[k]) {
         pos.set([prev.x, prev.y, prev.z, s.to.x, s.to.y, s.to.z], v * 3);
@@ -78,9 +81,10 @@ function previewBuffers(settings, view) {
         v += 2; prev = q; prevAmp = a;
       }
     }
+    for (let i = seg0; i < v / 2; i++) bead.set([r.layer, r.width, r.height], i * 3);
   });
   for (let L = 0; L < layerStart.length; L++) if (layerStart[L] < 0) layerStart[L] = v;
-  return { pos, amp, layerStart, frames, stats };
+  return { pos, amp, bead, layerStart, frames, stats };
 }
 
 function exportBytes(settings, format) {
@@ -96,7 +100,11 @@ self.onmessage = (ev) => {
       const bytes = new Uint8Array(m.bytes);
       doc = { name: m.name, archive: null, text: null, plate: 0, parsed: null };
       if (isZip(bytes)) {
-        doc.archive = readArchive(bytes);
+        try {
+          doc.archive = readArchive(bytes);
+        } catch {
+          throw new Error("This file looks like a .3mf but couldn't be unpacked; it may be damaged or only partly downloaded. Export it again from your slicer (Bambu Studio: File › Export › Export plate sliced file).");
+        }
         if (!doc.archive.plates.length) throw new Error("This 3MF has no sliced G-code. In Bambu Studio, slice the plate and use File › Export › Export plate sliced file.");
         self.postMessage({ id: m.id, type: "loaded", info: loadPlate(doc.archive.plates[0]) });
       } else {
@@ -107,7 +115,7 @@ self.onmessage = (ev) => {
       self.postMessage({ id: m.id, type: "loaded", info: loadPlate(m.plate) });
     } else if (m.type === "preview") {
       const b = previewBuffers(m.settings, m.view);
-      self.postMessage({ id: m.id, type: "preview", ...b }, [b.pos.buffer, b.amp.buffer, b.layerStart.buffer]);
+      self.postMessage({ id: m.id, type: "preview", ...b }, [b.pos.buffer, b.amp.buffer, b.bead.buffer, b.layerStart.buffer]);
     } else if (m.type === "export") {
       const bytes = exportBytes(m.settings, m.format);
       self.postMessage({ id: m.id, type: "exported", bytes }, [bytes.buffer]);

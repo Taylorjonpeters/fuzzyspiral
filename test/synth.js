@@ -89,3 +89,62 @@ export function prusaGcode({ layers = 6, layerH = 0.2 } = {}) {
   L.push("M84", "");
   return L.join("\r\n");
 }
+
+/**
+ * A lamp shade cross-section: an outer shell (r 40, wall to r 38) around a socket tube
+ * (r 8, bore r 5), all one object. Per layer the outer walls are: shell outside (depth 0),
+ * shell inside (depth 1, a hole), tube outside (depth 2, an island), tube bore (depth 3).
+ */
+export function lampGcode({ layers = 4, layerH = 0.2 } = {}) {
+  const L = ["; BambuStudio 02.05.00.66", "G90", "M83"];
+  const loop = (pts) => {
+    L.push(`G1 X${f3(pts[0][0])} Y${f3(pts[0][1])} F42000`);
+    for (let k = 1; k < pts.length; k++) {
+      const d = Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+      L.push(`G1 X${f3(pts[k][0])} Y${f3(pts[k][1])} E${(d * 0.031).toFixed(5)}`);
+    }
+  };
+  for (let n = 1; n <= layers; n++) {
+    L.push("; CHANGE_LAYER", `; Z_HEIGHT: ${(n * layerH).toFixed(1)}`, `G1 Z${f3(n * layerH)} F1200`);
+    L.push("; start printing object, unique label id: 1");
+    for (const [r, ccw] of [[40, true], [38, false], [8, true], [5, false]]) {
+      L.push("; FEATURE: Outer wall");
+      loop(circle(128, 128, r, 120, ccw));
+    }
+    L.push("; stop printing object, unique label id: 1");
+  }
+  L.push("");
+  return L.join("\n");
+}
+
+/**
+ * A lamp base whose cable slot runs from the rim in to a central tube, as one outline: rim arc
+ * (r 40), slot side in, around the tube (r 8) the long way, slot side out. Bambu interrupts the
+ * wall with M106 fan lines at the slot corners and an M73 progress line on the rim, which is
+ * how the real KDI lamp file arrives.
+ */
+export function slottedBaseGcode({ layers = 3, layerH = 0.2, half = 2 } = {}) {
+  const c = 128, R = 40, r = 8;
+  const L = ["; BambuStudio 02.05.00.66", "G90", "M83"];
+  const aR = Math.asin(half / R), ar = Math.asin(half / r);
+  const arc = (rad, from, to, n) => Array.from({ length: n + 1 }, (_, k) => {
+    const a = from + ((to - from) * k) / n;
+    return [c + rad * Math.cos(a), c + rad * Math.sin(a)];
+  });
+  for (let n = 1; n <= layers; n++) {
+    L.push("; CHANGE_LAYER", `; Z_HEIGHT: ${(n * layerH).toFixed(1)}`, `G1 Z${f3(n * layerH)} F1200`);
+    // Slot points along -Y: rim CCW from the slot's right edge round to its left edge.
+    const rim = arc(R, -Math.PI / 2 + aR, (3 * Math.PI) / 2 - aR, 200);
+    const tube = arc(r, (3 * Math.PI) / 2 - ar, -Math.PI / 2 + ar, 60); // CW round the tube
+    const pts = [...rim, ...tube, rim[0]];
+    L.push(`G1 X${f3(pts[0][0])} Y${f3(pts[0][1])} F42000`, "; FEATURE: Outer wall", "; LINE_WIDTH: 0.42", "G1 F3000");
+    for (let k = 1; k < pts.length; k++) {
+      const d = Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+      L.push(`G1 X${f3(pts[k][0])} Y${f3(pts[k][1])} E${(d * 0.031).toFixed(5)}`);
+      if (k === 100) L.push("M73 P50 R10");
+      if (k === rim.length - 1 || k === rim.length) L.push("M106 S229.5");
+    }
+  }
+  L.push("");
+  return L.join("\n");
+}

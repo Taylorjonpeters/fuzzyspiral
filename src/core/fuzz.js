@@ -6,7 +6,7 @@
 
 import { evalMask } from "./patterns.js";
 import { rng, perlin3 } from "./noise.js";
-import { airSides, runPoints } from "./geometry.js";
+import { airSides, runPoints, outerProfiles } from "./geometry.js";
 
 /**
  * @typedef {object} FuzzSettings
@@ -18,7 +18,10 @@ import { airSides, runPoints } from "./geometry.js";
  * @property {number} seed
  * @property {number} maxPtsPerMm    caps point density so fast walls don't stutter
  * @property {boolean} skipFirstLayer
- * @property {'all'|'contour'} walls  'contour' leaves the outer walls of holes smooth
+ * @property {'all'|'contour'|'outermost'} walls
+ *   'contour' leaves the outer walls of holes smooth; 'outermost' fuzzes only wall points with
+ *   nothing further out at the same angle from the pattern center, so a lamp's inner tube, cable
+ *   slot and inside face all stay smooth
  */
 
 /**
@@ -48,10 +51,12 @@ export const DEFAULT_FUZZ = {
  * @param {Settings['center']} center
  */
 export function objectFrames(parsed, center) {
-  /** @type {Record<string, {x:number,y:number,minZ:number,maxZ:number}>} */
+  /** @type {Record<string, {x:number,y:number,r:number,minZ:number,maxZ:number}>} */
   const out = {};
   for (const [k, b] of Object.entries(parsed.objects)) {
     out[k] = {
+      // Half the larger footprint side: a cylinder the preview can pick strokes against.
+      r: Math.max(b.maxX - b.minX, b.maxY - b.minY) / 2,
       x: center?.mode === "custom" ? center.x : (b.minX + b.maxX) / 2,
       y: center?.mode === "custom" ? center.y : (b.minY + b.maxY) / 2,
       minZ: b.minZ,
@@ -74,6 +79,7 @@ export function maskSampler(settings, frames) {
     return evalMask(settings.stack, {
       x, y, z, layer,
       theta: Math.atan2(y - fr.y, x - fr.x),
+      r: Math.hypot(x - fr.x, y - fr.y),
       t: h > 0 ? (z - fr.minZ) / h : 0,
     });
   };
@@ -88,14 +94,28 @@ export function applyFuzz(parsed, settings) {
   const F = { ...DEFAULT_FUZZ, ...settings.fuzz };
   const frames = objectFrames(parsed, settings.center);
   const { sides, holes } = airSides(parsed.runs, frames);
-  const mask = maskSampler(settings, frames);
+  const skipWall = (idx) => F.walls === "contour" && holes[idx];
+  const sampler = maskSampler(settings, frames);
+  /** @type {(p: {x:number,y:number,z:number}, run: import('./parse.js').Run) => number} */
+  let mask = (p, run) => sampler(p.x, p.y, p.z, run.layer, run.obj);
+  if (F.walls === "outermost") {
+    const profiles = outerProfiles(parsed.runs, frames);
+    const base = mask;
+    mask = (p, run) => {
+      const prof = profiles.get(`${run.layer}|${run.obj}`);
+      // Within a line and a half of the furthest wall counts as that wall: fuzz and the inner
+      // face of a thin shell are both further in than that.
+      const inside = prof && prof.bins[prof.binOf(p)] - Math.hypot(p.x - prof.cx, p.y - prof.cy) > 1.5 * run.width;
+      return inside ? 0 : base(p, run);
+    };
+  }
   const perlin = perlin3(F.seed);
   const spacing = Math.max(F.pointDist, 1 / Math.max(F.maxPtsPerMm, 0.01));
   const stats = { runsChanged: 0, pointsBefore: 0, pointsAfter: 0 };
 
   const out = parsed.runs.map((run, idx) => {
     stats.pointsBefore += run.segs.length;
-    if ((F.skipFirstLayer && run.layer <= 1) || (F.walls === "contour" && holes[idx])) {
+    if ((F.skipFirstLayer && run.layer <= 1) || skipWall(idx)) {
       stats.pointsAfter += run.segs.length;
       return null;
     }
@@ -123,7 +143,7 @@ function fuzzRun(run, side, F, spacing, mask, perlin, rand) {
     const r = rand();
     return F.mode === "outward" ? r : r * 2 - 1;
   };
-  const m = (p) => mask(p.x, p.y, p.z, run.layer, run.obj);
+  const m = (p) => mask(p, run);
   const normal = (k) => {
     const a = pts[k], b = pts[k + 1];
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;

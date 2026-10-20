@@ -6,6 +6,7 @@
 // (`tip`), and fine-tuning sits in collapsed "More" sections.
 
 import { makeLayer, PRESETS } from "../core/patterns.js";
+import { createSwatch } from "./fuzzSwatch.js";
 
 /** Control specs per layer type. `kind` is range | number | select | check. */
 const PARAMS = {
@@ -15,9 +16,13 @@ const PARAMS = {
     { k: "from", label: "From", kind: "number", step: 1, tip: "First layer (or height) that gets fuzz, inclusive." },
     { k: "to", label: "To", kind: "number", step: 1, tip: "Last layer (or height) that gets fuzz, inclusive." },
   ],
+  radius: [
+    { k: "min", label: "Inner edge (mm from center)", kind: "range", min: 0, max: 150, step: 0.5, tip: "Walls closer to the center than this stay smooth." },
+    { k: "max", label: "Outer edge (mm, 0 = none)", kind: "range", min: 0, max: 300, step: 0.5, tip: "Walls further out than this stay smooth. 0 means no outer limit." },
+  ],
   spiral: [
     { k: "starts", label: "Starts", kind: "range", min: 1, max: 16, step: 1, tip: "How many separate spiral stripes wind around the part." },
-    { k: "pitch", label: "Pitch (mm)", kind: "range", min: 2, max: 200, step: 1, tip: "Height a stripe climbs in one full turn. Smaller is steeper." },
+    { k: "pitch", label: "Pitch (mm)", kind: "range", min: 2, max: 500, step: 1, tip: "Height a stripe climbs in one full turn. Smaller is steeper." },
     { k: "duty", label: "Width", kind: "range", min: 0.05, max: 0.95, step: 0.01, tip: "Share of each repeat that is fuzzed." },
   ],
   stripes: [
@@ -55,13 +60,14 @@ const MORE_PARAMS = {
 };
 
 const TYPE_LABEL = {
-  constant: "Everywhere", zrange: "Layer range", spiral: "Spiral", stripes: "Vertical stripes",
+  constant: "Everywhere", zrange: "Layer range", radius: "Distance from center", spiral: "Spiral", stripes: "Vertical stripes",
   bands: "Horizontal bands", checker: "Checker", gradient: "Height gradient",
 };
 
 const TYPE_TIP = {
   constant: "Fuzz the whole outer wall, like the slicer's own fuzzy skin.",
   zrange: "Fuzz only between two layers or heights.",
+  radius: "Keep the middle smooth: fuzz only walls far enough from the center.",
   spiral: "Stripes that wind around the part as it rises.",
   stripes: "Vertical stripes evenly spaced around the part.",
   bands: "Horizontal rings at a fixed spacing.",
@@ -72,17 +78,17 @@ const TYPE_TIP = {
 const BLEND_TIP = "How this layer combines with the ones above it: union adds its area, intersect keeps only the overlap, subtract cuts it out.";
 
 const FUZZ = [
-  { k: "thickness", label: "Thickness (mm)", kind: "range", min: 0.05, max: 1.5, step: 0.01, tip: "How far the nozzle wanders from the wall. Bambu's default is 0.3." },
-  { k: "pointDist", label: "Point distance (mm)", kind: "range", min: 0.1, max: 3, step: 0.05, tip: "Spacing between wiggles along the wall. Smaller is finer. Bambu's default is 0.8." },
-  { k: "walls", label: "Walls", kind: "select", options: [["all", "outside and holes"], ["contour", "outside only"]], tip: "\"Outside only\" leaves the walls inside holes smooth, like Bambu's Contour option." },
+  { k: "thickness", swatch: true, label: "Thickness (mm)", kind: "range", min: 0.05, max: 1.5, step: 0.01, tip: "How far the nozzle wanders from the wall. Bambu's default is 0.3." },
+  { k: "pointDist", swatch: true, label: "Point distance (mm)", kind: "range", min: 0.1, max: 3, step: 0.05, tip: "Spacing between wiggles along the wall. Smaller is finer. Bambu's default is 0.8." },
+  { k: "walls", label: "Walls", kind: "select", options: [["all", "every outer wall"], ["contour", "skip holes"], ["outermost", "outermost skin only"]], tip: "Skip holes leaves walls inside holes smooth, like Bambu's Contour option. Outermost skin only fuzzes just the surface you see from outside: looking out from the pattern center, only the furthest wall in each direction. A lamp's inside face, socket tube and cable slot stay smooth." },
 ];
 
 const FUZZ_MORE = [
-  { k: "noise", label: "Noise", kind: "select", options: [["classic", "classic (random)"], ["perlin", "Perlin (smooth)"]], tip: "Classic matches slicer fuzzy skin. Perlin varies smoothly, so neighbouring layers line up into a texture." },
-  { k: "noiseScale", label: "Perlin scale (mm)", kind: "range", min: 0.2, max: 10, step: 0.1, when: (f) => f.noise === "perlin", tip: "Size of the Perlin texture's features." },
-  { k: "mode", label: "Direction", kind: "select", options: [["both", "in and out"], ["outward", "outward only"]], tip: "Outward only never cuts into the part, so dimensions stay at least nominal." },
-  { k: "seed", label: "Seed", kind: "number", step: 1, tip: "Change for a different random texture with the same settings." },
-  { k: "maxPtsPerMm", label: "Max points per mm", kind: "range", min: 1, max: 20, step: 0.5, tip: "Caps detail so very fine fuzz doesn't make the printer stutter." },
+  { k: "noise", swatch: true, label: "Noise", kind: "select", options: [["classic", "classic (random)"], ["perlin", "Perlin (smooth)"]], tip: "Classic matches slicer fuzzy skin. Perlin varies smoothly, so neighbouring layers line up into a texture." },
+  { k: "noiseScale", swatch: true, label: "Perlin scale (mm)", kind: "range", min: 0.2, max: 10, step: 0.1, when: (f) => f.noise === "perlin", tip: "Size of the Perlin texture's features." },
+  { k: "mode", label: "Direction", swatch: true, kind: "select", options: [["both", "in and out"], ["outward", "outward only"]], tip: "Outward only never cuts into the part, so dimensions stay at least nominal." },
+  { k: "seed", swatch: true, label: "Seed", kind: "number", step: 1, tip: "Change for a different random texture with the same settings." },
+  { k: "maxPtsPerMm", swatch: true, label: "Max points per mm", kind: "range", min: 1, max: 20, step: 0.5, tip: "Caps detail so very fine fuzz doesn't make the printer stutter." },
   { k: "skipFirstLayer", label: "Leave first layer smooth", kind: "check", tip: "Keeps bed adhesion and elephant-foot unaffected." },
 ];
 
@@ -99,6 +105,12 @@ const h = (tag, attrs = {}, ...kids) => {
 
 /** One labelled control bound to obj[spec.k]. */
 function control(obj, spec, changed) {
+  const el = controlEl(obj, spec, changed);
+  if (spec.swatch) el.dataset.swatch = "";
+  return el;
+}
+
+function controlEl(obj, spec, changed) {
   const id = `c${Math.random().toString(36).slice(2, 8)}`;
   const v = obj[spec.k];
   const title = spec.tip;
@@ -134,18 +146,38 @@ const more = (kids, label = "More") => {
 /**
  * @param {HTMLElement} root
  * @param {{settings: any}} state
- * @param {{changed: () => void, pickCenter: () => void, savePattern: () => void, loadPattern: () => void}} actions
+ * @param {{changed: () => void, pickCenter: () => void, savePattern: () => void, loadPattern: () => void,
+ *          drawSpiral: (layer: import('../core/patterns.js').MaskLayer) => void}} actions
  */
 export function mountPanel(root, state, actions) {
   const stackHost = h("div", { class: "stack" });
   const fuzzHost = h("div");
+
+  // Close-up of the fuzz beside the slider being hovered or dragged.
+  const swatch = createSwatch();
+  let swatchRow = null;
+  let dragging = false;
+  const showSwatch = (row) => { swatchRow = row; swatch.draw(state.settings.fuzz); swatch.showAt(row); };
+  const hideSwatch = () => { if (!dragging) { swatchRow = null; swatch.hide(); } };
+  fuzzHost.addEventListener("pointerover", (e) => { const r = e.target.closest("[data-swatch]"); if (r && r !== swatchRow) showSwatch(r); });
+  fuzzHost.addEventListener("pointerleave", hideSwatch);
+  fuzzHost.addEventListener("pointerover", (e) => { if (!e.target.closest("[data-swatch]")) hideSwatch(); });
+  fuzzHost.addEventListener("focusin", (e) => { const r = e.target.closest("[data-swatch]"); if (r) showSwatch(r); });
+  fuzzHost.addEventListener("focusout", hideSwatch);
+  fuzzHost.addEventListener("pointerdown", (e) => { if (e.target.closest("[data-swatch]")) dragging = true; });
+  addEventListener("pointerup", () => {
+    if (!dragging) return;
+    dragging = false;
+    // Keep it up if the pointer is still over a fuzz control.
+    if (!fuzzHost.matches(":hover")) hideSwatch();
+  });
 
   const rebuildStack = () => {
     const stack = state.settings.stack;
     // Keep open "More" sections open across rebuilds.
     const open = new Set([...stackHost.querySelectorAll("details[open]")].map((d) => d.dataset.id));
     stackHost.replaceChildren(...stack.map((L, i) => layerCard(L, i, stack.length, open.has(L.id))));
-    if (!stack.length) stackHost.append(h("p", { class: "hint" }, "Nothing is fuzzed. Pick a preset or add a layer."));
+    if (!stack.length) stackHost.append(h("p", { class: "hint" }, "Nothing is fuzzed. Pick a preset or add a layer with +."));
   };
 
   const structural = () => { rebuildStack(); actions.changed(); };
@@ -167,18 +199,22 @@ export function mountPanel(root, state, actions) {
       n > 1 ? h("button", { class: "icon", title: "Move down", disabled: i === n - 1, onclick: () => move(1) }, "↓") : null,
       h("button", { class: "icon", title: "Remove layer", onclick: () => { stack.splice(i, 1); structural(); } }, "×"));
 
+    const mmFeather = L.type === "zrange" || L.type === "radius";
     const feathers = L.type !== "gradient" && L.type !== "constant" && !(L.type === "zrange" && L.params.unit === "layer");
     const extra = more([
       ...(MORE_PARAMS[L.type] ?? []).map((p) => control(L.params, p, changedP)),
       feathers
-        ? control(L, { k: "feather", label: L.type === "zrange" ? "Soft edge (mm)" : "Soft edge", kind: "range", min: 0, max: L.type === "zrange" ? 10 : 0.5, step: 0.01, tip: "Fades the pattern's edges instead of a hard line." }, actions.changed)
+        ? control(L, { k: "feather", label: mmFeather ? "Soft edge (mm)" : "Soft edge", kind: "range", min: 0, max: mmFeather ? 10 : 0.5, step: 0.01, tip: "Fades the pattern's edges instead of a hard line." }, actions.changed)
         : null,
       control(L, { k: "strength", label: "Strength", kind: "range", min: 0, max: 1, step: 0.01, tip: "Scales this layer's fuzz amount." }, actions.changed),
       control(L, { k: "invert", label: "Invert", kind: "check", tip: "Fuzz where the pattern isn't, and leave its area smooth." }, actions.changed),
     ]);
     if (extra) { extra.dataset.id = L.id; extra.open = moreOpen; }
 
-    const body = h("div", { class: "card-body" }, PARAMS[L.type].map((p) => control(L.params, p, changedP)), extra);
+    const draw = L.type === "spiral"
+      ? h("button", { class: "draw", title: "Drag across the part in the preview along the line one stripe should follow. Sets pitch, twist and rotation.", onclick: () => actions.drawSpiral(L) }, "✎ Draw on model")
+      : null;
+    const body = h("div", { class: "card-body" }, draw, PARAMS[L.type].map((p) => control(L.params, p, changedP)), extra);
     return h("div", { class: `card${L.enabled ? "" : " off"}` }, head, L.enabled ? body : null);
   };
 
@@ -186,7 +222,11 @@ export function mountPanel(root, state, actions) {
     const f = state.settings.fuzz;
     const c = state.settings.center;
     const wasOpen = fuzzHost.querySelector("details")?.open ?? false;
-    const onFuzz = (rebuild) => { if (rebuild) rebuildFuzz(); actions.changed(); };
+    const onFuzz = (rebuild) => {
+      if (rebuild) rebuildFuzz();
+      if (swatchRow) swatch.draw(f);
+      actions.changed();
+    };
     const extra = more([
       ...FUZZ_MORE.filter((s) => !s.when || s.when(f)).map((s) => control(f, s, onFuzz)),
       control(c, { k: "mode", label: "Pattern center", kind: "select", options: [["auto", "middle of each object"], ["custom", "custom point"]], tip: "The point spirals, stripes and checkers wrap around." }, onFuzz),
@@ -211,26 +251,43 @@ export function mountPanel(root, state, actions) {
     structural();
   });
 
-  const addSel = h("select", { title: "Stack another pattern on top" },
-    h("option", { value: "" }, "+ Layer…"),
-    Object.entries(TYPE_LABEL).map(([k, t]) => h("option", { value: k, title: TYPE_TIP[k] }, t)));
-  addSel.addEventListener("change", () => {
-    if (!addSel.value) return;
-    state.settings.stack.push(makeLayer(addSel.value));
-    addSel.value = "";
-    structural();
+  // "+" opens a short menu of layer types; picking one appends it to the stack.
+  const addMenu = h("div", { class: "menu", role: "menu", hidden: true },
+    Object.entries(TYPE_LABEL).map(([k, t]) =>
+      h("button", { role: "menuitem", onclick: () => {
+        closeAdd();
+        state.settings.stack.push(makeLayer(k));
+        structural();
+      } }, h("strong", {}, t), h("span", {}, TYPE_TIP[k]))));
+  const addBtn = h("button", { class: "icon add", title: "Add a pattern layer", "aria-haspopup": "menu", "aria-expanded": "false",
+    onclick: (e) => { e.stopPropagation(); addMenu.hidden ? openAdd() : closeAdd(); } }, "+");
+  const openAdd = () => {
+    addMenu.hidden = false;
+    addBtn.setAttribute("aria-expanded", "true");
+    addMenu.querySelector("button")?.focus();
+  };
+  const closeAdd = () => { addMenu.hidden = true; addBtn.setAttribute("aria-expanded", "false"); };
+  addEventListener("click", (e) => { if (!addMenu.hidden && !addMenu.contains(e.target)) closeAdd(); });
+  addMenu.addEventListener("keydown", (e) => {
+    const items = [...addMenu.querySelectorAll("button")];
+    const i = items.indexOf(document.activeElement);
+    if (e.key === "Escape") { closeAdd(); addBtn.focus(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
   });
 
   root.replaceChildren(
+    h("section", {}, h("h2", { title: "What the fuzz looks like. The pattern below decides where it goes." }, "Fuzzy skin"), fuzzHost),
     h("section", {},
       h("div", { class: "sec-head" },
         h("h2", { title: "Where on the outer wall the fuzz goes. Layers stack top to bottom." }, "Pattern"),
         h("span", { class: "grow" }),
+        addBtn,
         h("button", { class: "icon", title: "Load a saved pattern (.json)", onclick: actions.loadPattern }, "⤒"),
-        h("button", { class: "icon", title: "Save this pattern as a .json file", onclick: actions.savePattern }, "⤓")),
-      h("div", { class: "row2" }, presetSel, addSel),
+        h("button", { class: "icon", title: "Save this pattern as a .json file", onclick: actions.savePattern }, "⤓"),
+        addMenu),
+      h("div", { class: "row1" }, presetSel),
       stackHost),
-    h("section", {}, h("h2", { title: "What the fuzz looks like where the pattern applies." }, "Fuzzy skin"), fuzzHost),
   );
 
   const refresh = () => { rebuildStack(); rebuildFuzz(); };

@@ -11,13 +11,14 @@
  * @property {number} z
  * @property {number} layer   1-based, matching the layer numbers Bambu Studio shows
  * @property {number} theta   angle around the object's pattern center, radians [-π, π]
+ * @property {number} r       distance from the object's pattern center, mm
  * @property {number} t       height as a fraction of the object's printed height, 0..1
  */
 
 /**
  * @typedef {object} MaskLayer
  * @property {string} id
- * @property {'constant'|'zrange'|'spiral'|'stripes'|'bands'|'checker'|'gradient'} type
+ * @property {'constant'|'zrange'|'radius'|'spiral'|'stripes'|'bands'|'checker'|'gradient'} type
  * @property {boolean} enabled
  * @property {'max'|'add'|'multiply'|'subtract'|'min'} blend   ignored for the first enabled layer
  * @property {boolean} invert
@@ -64,6 +65,14 @@ const EVAL = {
     if (p.unit === "layer") return v >= lo && v <= hi ? 1 : 0;
     const f = feather / 2;
     return smoothstep(lo - f, lo + f, v) * (1 - smoothstep(hi - f, hi + f, v));
+  },
+
+  // Fuzz only between two distances from the pattern center: keeps a lamp's core or a
+  // vase's inner features smooth however they connect to the outer skin.
+  radius(s, p, feather) {
+    const f = feather / 2;
+    const hi = p.max > 0 ? 1 - smoothstep(p.max - f, p.max + f, s.r) : 1;
+    return smoothstep(p.min - f, p.min + f, s.r) * hi;
   },
 
   // A helix: stripes that wind around the object as it rises.
@@ -135,6 +144,7 @@ const uid = () => `L${Date.now().toString(36)}${(nextId++).toString(36)}`;
 export const LAYER_DEFAULTS = {
   constant: { feather: 0, params: {} },
   zrange: { feather: 0, params: { unit: "layer", from: 2, to: 40 } },
+  radius: { feather: 1, params: { min: 20, max: 0 } },
   spiral: { feather: 0.1, params: { starts: 3, pitch: 30, duty: 0.5, hand: "right", phase: 0 } },
   stripes: { feather: 0.1, params: { count: 12, duty: 0.5, phase: 0 } },
   bands: { feather: 0.1, params: { period: 4, duty: 0.5, phase: 0 } },
@@ -175,3 +185,33 @@ export const PRESETS = {
   "Checker": () => [makeLayer("checker")],
   "Everywhere (plain fuzzy skin)": () => [makeLayer("constant")],
 };
+
+/**
+ * Spiral settings from a stroke dragged along the part: the stripe should run from `a` to `b`.
+ *
+ * A stripe is a line of constant phase, so along it hand·Δturn = Δz / pitch. The stroke's change
+ * in angle and height gives pitch and twist; phase is then set so a stripe's middle passes
+ * through `a`. The stroke is taken as the short way round (under half a turn), which is what
+ * dragging across the visible side of a part gives.
+ *
+ * @param {{x:number,y:number,z:number}} a
+ * @param {{x:number,y:number,z:number}} b
+ * @param {{x:number,y:number}} center
+ * @param {{starts:number, duty:number}} params
+ * @returns {{pitch:number, hand:'right'|'left', phase:number} | null}  null for a stroke too short to read
+ */
+export function spiralFromStroke(a, b, center, params, limits = { minPitch: 2, maxPitch: 1000 }) {
+  const turnOf = (p) => frac(Math.atan2(p.y - center.y, p.x - center.x) / TAU);
+  let dTurn = turnOf(b) - turnOf(a);
+  dTurn -= Math.round(dTurn);
+  const dz = b.z - a.z;
+  const r = Math.hypot(a.x - center.x, a.y - center.y);
+  // Ignore strokes shorter than about a millimetre along the surface.
+  if (Math.hypot(dTurn * TAU * r, dz) < 1) return null;
+  const hand = dTurn * dz >= 0 ? "right" : "left";
+  const raw = Math.abs(dTurn) < 1e-6 ? Infinity : Math.abs(dz / dTurn);
+  const pitch = Math.min(limits.maxPitch, Math.max(limits.minPitch, raw));
+  const sign = hand === "left" ? -1 : 1;
+  const phase = frac(params.duty / 2 - params.starts * (sign * turnOf(a) - a.z / pitch));
+  return { pitch: Math.round(pitch * 10) / 10, hand, phase: Math.round(phase * 1000) / 1000 };
+}

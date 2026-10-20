@@ -33,7 +33,6 @@ code { background: #2a2a2a; padding: 0 4px; border-radius: 3px; }
 button.icon { padding: 1px 7px; min-width: 26px; }
 button.round { border-radius: 50%; width: 28px; height: 28px; padding: 0; font-weight: 700; }
 [title] { text-underline-offset: 3px; }
-.status.err { color: var(--err); }
 
 .main { flex: 1; display: flex; min-height: 0; }
 .side { width: 300px; flex: none; overflow-y: auto; overflow-x: hidden; border-right: 1px solid var(--line); background: var(--panel); padding: 4px 12px 24px; }
@@ -56,9 +55,13 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; }
 .card.off { opacity: 0.55; }
-.card-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
-.card-head button { padding: 1px 7px; }
-.card-head select { padding: 1px 4px; }
+.card-head { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--line); min-width: 0; }
+.card-head input[type="checkbox"] { flex: none; margin: 0 2px 0 0; }
+/* The name and blend menu give way first, so the move and remove buttons always fit. */
+.card-head strong { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-head select { flex: 0 1 auto; min-width: 56px; max-width: 96px; padding: 1px 2px; }
+.card-head .grow { flex: 1 1 0; min-width: 0; }
+.card-head button { flex: none; padding: 0; min-width: 22px; width: 22px; height: 22px; }
 .card-body { padding: 2px 10px 6px; }
 
 .stage-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -85,15 +88,27 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   .stage { min-height: 320px; }
 }
 
-.sec-head { display: flex; align-items: center; gap: 4px; }
+.sec-head { display: flex; align-items: center; gap: 4px; position: relative; }
+.row1 { margin-bottom: 8px; }
+.row1 select { width: 100%; }
+button.add { color: var(--accent); font-weight: 700; font-size: 15px; line-height: 1; }
+.menu {
+  position: absolute; top: calc(100% + 2px); right: 0; z-index: 10; width: 250px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.menu button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; border: none; background: none; padding: 6px 8px; border-radius: 6px; }
+.menu button:hover, .menu button:focus-visible { background: var(--card); outline: none; }
+.menu button span { color: var(--dim); font-size: 11px; }
 .sec-head h2 { margin: 4px 0 8px; cursor: help; }
 .sec-head button { margin-bottom: 4px; }
 .side h2[title] { cursor: help; }
 
 details.more { margin: 6px 0 2px; }
 details.more > summary { color: var(--dim); cursor: pointer; font-size: 12px; list-style: none; user-select: none; }
-details.more > summary::before { content: "▸ "; }
-details.more[open] > summary::before { content: "▾ "; }
+details.more > summary::before { content: "\25B8\00A0"; }
+details.more[open] > summary::before { content: "\25BE\00A0"; }
 details.more[open] { padding-bottom: 4px; }
 details.more > button { margin-top: 6px; }
 
@@ -110,3 +125,24 @@ dialog.help p { margin: 6px 0; }
 dialog.help .close { position: sticky; float: right; top: 0; }
 dialog.help .foot { margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px; }
 dialog.help a { color: var(--accent); }
+
+.swatch {
+  position: fixed; z-index: 20; pointer-events: none;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 8px 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.swatch canvas { display: block; background: var(--bg); border-radius: 6px; }
+.swatch-cap { color: var(--dim); font-size: 11px; margin-top: 4px; max-width: 280px; }
+
+button.draw { width: 100%; margin: 6px 0 2px; border-style: dashed; color: var(--accent); }
+button.draw.on { background: var(--accent); color: #1a1a1a; border-style: solid; }
+
+dialog.error-dialog {
+  max-width: 420px; width: calc(100% - 32px);
+  background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  border-top: 3px solid var(--err); border-radius: 12px; padding: 18px 20px 16px;
+}
+dialog.error-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+dialog.error-dialog h2 { margin: 0 0 6px; font-size: 16px; }
+dialog.error-dialog p { margin: 0 0 16px; color: #cfcfcf; line-height: 1.5; white-space: pre-wrap; }
+dialog.error-dialog form { display: flex; justify-content: flex-end; }

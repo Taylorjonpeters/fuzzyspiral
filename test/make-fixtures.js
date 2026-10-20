@@ -3,7 +3,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { zipSync, strToU8 } from "fflate";
-import { bambuGcode, prusaGcode } from "./synth.js";
+import { bambuGcode, prusaGcode, lampGcode } from "./synth.js";
 
 mkdirSync("fixtures", { recursive: true });
 const g = bambuGcode({ layers: 60 });
@@ -14,4 +14,5 @@ writeFileSync("fixtures/synthetic-bambu.gcode.3mf", zipSync({
   "Metadata/slice_info.config": strToU8("<config/>"),
 }));
 writeFileSync("fixtures/synthetic-prusa.gcode", prusaGcode({ layers: 40 }));
-console.log("wrote fixtures/synthetic-bambu.gcode.3mf, fixtures/synthetic-prusa.gcode");
+writeFileSync("fixtures/synthetic-lamp.gcode", lampGcode({ layers: 80 }));
+console.log("wrote fixtures/synthetic-bambu.gcode.3mf, synthetic-prusa.gcode, synthetic-lamp.gcode");
