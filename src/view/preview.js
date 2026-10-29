@@ -91,8 +91,7 @@ export function createPreview(host) {
   const sample = { x: 0, y: 0, z: 0, layer: 0, theta: 0, r: 0, t: 0 };
 
   /** Paint one frame's sleeve texture: smooth areas faint blue, fuzzed areas solid orange. */
-  function paintSleeve(layer, f, H) {
-    const data = new Uint8Array(SLEEVE_W * H * 4);
+  function paintSleeve(data, layer, f, H) {
     const stack = [{ ...layer, enabled: true }];
     const h = f.maxZ - f.minZ;
     sample.r = f.r;
@@ -109,7 +108,6 @@ export function createPreview(host) {
         data[o + 3] = 50 + 170 * v;
       }
     }
-    return data;
   }
 
   /** An open cylinder in Z-up coordinates whose u runs counter-clockwise from +X, like `theta`. */
@@ -246,6 +244,39 @@ export function createPreview(host) {
     },
 
     resetFraming() { framed = false; },
+
+    /**
+     * Wrap every part in a sleeve showing where `layer` alone puts fuzz. Call again after each
+     * parameter change; the sleeves are rebuilt only when the parts change.
+     * @param {import('../core/patterns.js').MaskLayer} layer
+     */
+    showGuide(layer) {
+      if (sleeves.userData.frames !== frames) {
+        for (const m of sleeves.children) { m.geometry.dispose(); m.material.map.dispose(); m.material.dispose(); }
+        sleeves.clear();
+        for (const f of Object.values(frames)) {
+          // About two texels per mm of height: fine enough for steep spirals, cheap on tall parts.
+          const H = Math.max(64, Math.min(512, Math.round((f.maxZ - f.minZ) * 2)));
+          const tex = new THREE.DataTexture(new Uint8Array(SLEEVE_W * H * 4), SLEEVE_W, H);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.magFilter = THREE.LinearFilter;
+          const m = new THREE.Mesh(sleeveGeometry(f), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+          m.userData = { f, H };
+          m.renderOrder = 9;
+          sleeves.add(m);
+        }
+        sleeves.userData.frames = frames;
+      }
+      for (const m of sleeves.children) {
+        const tex = m.material.map;
+        paintSleeve(tex.image.data, layer, m.userData.f, m.userData.H);
+        tex.needsUpdate = true;
+      }
+      sleeves.visible = true;
+    },
+
+    hideGuide() { sleeves.visible = false; },
 
     /** Bed coordinates under a client-space pointer position, or null off the bed plane. */
     pickBed(clientX, clientY) {

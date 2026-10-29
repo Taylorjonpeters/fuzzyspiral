@@ -119,8 +119,32 @@ async function refreshPreview() {
 const changed = () => {
   saveSettings();
   clearTimeout(previewTimer);
-  previewTimer = setTimeout(refreshPreview, 120);
+  // While a pattern slider is held, the guide sleeve shows the change; fuzz once it's let go.
+  if (!guiding) previewTimer = setTimeout(refreshPreview, 120);
 };
+
+// Pattern guide: while a spiral or gradient slider moves, a sleeve on the model shows the layer
+// at once. A pointer drag ends on release; keyboard nudges end after a short pause.
+let guiding = null;
+let pointerHeld = false;
+let guideTimer = 0;
+function guide(layer) {
+  if (!state.info) return;
+  guiding = layer;
+  clearTimeout(previewTimer);
+  clearTimeout(guideTimer);
+  preview.showGuide(layer);
+  if (!pointerHeld) guideTimer = setTimeout(endGuide, 700);
+}
+function endGuide() {
+  if (!guiding) return;
+  guiding = null;
+  preview.hideGuide();
+  refreshPreview();
+}
+addEventListener("pointerdown", () => { pointerHeld = true; }, true);
+addEventListener("pointerup", () => { pointerHeld = false; endGuide(); });
+addEventListener("pointercancel", () => { pointerHeld = false; endGuide(); });
 
 const panel = mountPanel($("panel"), state, {
   changed,
@@ -128,6 +152,7 @@ const panel = mountPanel($("panel"), state, {
   loadPattern: () => $("settingsFile").click(),
   drawSpiral,
   drawGradient,
+  guide,
   pickCenter: () => {
     state.picking = true;
     $("stage").classList.add("picking");
