@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { createBeads } from "./beads.js";
+import { evalMask } from "../core/patterns.js";
 
 const OFF = new THREE.Color("#5b7fb8");
 const ON = new THREE.Color("#ff8a3d");
@@ -61,6 +62,58 @@ export function createPreview(host) {
     ring.position.set(f.x, f.y, z);
     ring.visible = true;
   };
+
+  // Pattern sleeve: a see-through cylinder around each part, painted with one layer's mask straight
+  // from its parameters. It is cheap enough to redraw on every slider tick, so it shows where the
+  // pattern lands while the real fuzz waits for the slider to be let go.
+  const sleeves = new THREE.Group();
+  scene.add(sleeves);
+  const SLEEVE_W = 256;
+  // sRGB bytes, since the texture is tagged sRGB and the colors should match the toolpath's.
+  const rgb = (c) => { const h = c.getHex(); return [h >> 16, (h >> 8) & 255, h & 255]; };
+  const OFF_RGB = rgb(OFF), ON_RGB = rgb(ON);
+  const sample = { x: 0, y: 0, z: 0, layer: 0, theta: 0, r: 0, t: 0 };
+
+  /** Paint one frame's sleeve texture: smooth areas faint blue, fuzzed areas solid orange. */
+  function paintSleeve(layer, f, H) {
+    const data = new Uint8Array(SLEEVE_W * H * 4);
+    const stack = [{ ...layer, enabled: true }];
+    const h = f.maxZ - f.minZ;
+    sample.r = f.r;
+    for (let j = 0; j < H; j++) {
+      sample.t = (j + 0.5) / H;
+      sample.z = f.minZ + sample.t * h;
+      for (let i = 0; i < SLEEVE_W; i++) {
+        sample.theta = ((i + 0.5) / SLEEVE_W) * Math.PI * 2;
+        sample.x = f.x + f.r * Math.cos(sample.theta);
+        sample.y = f.y + f.r * Math.sin(sample.theta);
+        const v = evalMask(stack, sample);
+        const o = (j * SLEEVE_W + i) * 4;
+        for (let c = 0; c < 3; c++) data[o + c] = OFF_RGB[c] + (ON_RGB[c] - OFF_RGB[c]) * v;
+        data[o + 3] = 50 + 170 * v;
+      }
+    }
+    return data;
+  }
+
+  /** An open cylinder in Z-up coordinates whose u runs counter-clockwise from +X, like `theta`. */
+  function sleeveGeometry(f) {
+    const R = f.r + 1.5, N = 128;
+    const pos = [], uv = [], idx = [];
+    for (let j = 0; j <= 1; j++) {
+      for (let i = 0; i <= N; i++) {
+        const a = (i / N) * Math.PI * 2;
+        pos.push(f.x + R * Math.cos(a), f.y + R * Math.sin(a), j ? f.maxZ : f.minZ);
+        uv.push(i / N, j);
+      }
+    }
+    for (let i = 0; i < N; i++) idx.push(i, i + 1, N + 2 + i, i, N + 2 + i, N + 1 + i);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    return g;
+  }
 
   /** @type {Record<string, {x:number,y:number,r:number,minZ:number,maxZ:number}>} */
   let frames = {};

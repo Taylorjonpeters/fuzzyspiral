@@ -49,6 +49,32 @@ const renderStatus = () => { $("status").textContent = busy ? "fuzzing…" : sta
 const status = (t) => { statusText = t; renderStatus(); };
 const setBusy = (b) => { busy = b; renderStatus(); };
 
+// A scrim with a centered spinner for work slow enough to notice. It appears only after a short
+// delay, so quick updates never flash it. "stage" covers the preview and leaves the sidebar and
+// any drag in progress usable; "screen" covers everything while a file is read or written.
+const works = new Set();
+function startWork(label, scope) {
+  const work = { label, scope, shown: false };
+  works.add(work);
+  setTimeout(() => { if (works.has(work)) { work.shown = true; renderScrim(); } }, scope === "screen" ? 150 : 300);
+  return () => { works.delete(work); renderScrim(); };
+}
+function renderScrim() {
+  const shown = [...works].filter((w) => w.shown);
+  const top = shown.find((w) => w.scope === "screen") ?? shown[0];
+  const scrim = $("scrim");
+  scrim.hidden = !top;
+  if (!top) return;
+  $("scrimLabel").textContent = top.label;
+  scrim.classList.toggle("screen", top.scope === "screen");
+  if (top.scope === "stage") {
+    const r = $("stage").getBoundingClientRect();
+    Object.assign(scrim.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+  } else {
+    Object.assign(scrim.style, { left: "", top: "", width: "", height: "" });
+  }
+}
+
 /** Errors stop the user, so they get a modal rather than a line in the header. */
 function showError(title, message) {
   status("");
@@ -68,6 +94,7 @@ async function refreshPreview() {
   if (!state.info) return;
   const seq = ++previewSeq;
   setBusy(true);
+  const done = startWork("Updating preview…", "stage");
   try {
     const d = await call({ type: "preview", settings: settingsSnapshot(), view: state.view });
     if (seq !== previewSeq) return;
@@ -80,6 +107,8 @@ async function refreshPreview() {
   } catch (e) {
     setBusy(false);
     showError("Preview failed", e.message);
+  } finally {
+    done();
   }
 }
 const changed = () => {
@@ -234,6 +263,7 @@ function showInfo(info) {
 
 async function openFile(file) {
   status(`reading ${file.name}…`);
+  const done = startWork(`Reading ${file.name}…`, "screen");
   try {
     const buf = await file.arrayBuffer();
     const { info } = await call({ type: "load", name: file.name, bytes: buf }, [buf]);
@@ -243,6 +273,8 @@ async function openFile(file) {
     await refreshPreview();
   } catch (e) {
     showError("Couldn't open the file", e.message);
+  } finally {
+    done();
   }
 }
 
@@ -272,6 +304,7 @@ function outName(format) {
 async function doExport(format) {
   if (!state.info) return;
   status("writing…");
+  const done = startWork(`Writing ${outName(format)}…`, "screen");
   try {
     const { bytes } = await call({ type: "export", settings: settingsSnapshot(), format });
     const blob = new Blob([bytes], { type: format === "3mf" ? "application/vnd.ms-package.3dmanufacturing-3dmodel+xml" : "text/plain" });
@@ -284,6 +317,8 @@ async function doExport(format) {
     setTimeout(() => { if (statusText === saved) status(""); }, 4000);
   } catch (e) {
     showError("Couldn't export", e.message);
+  } finally {
+    done();
   }
 }
 $("export3mf").addEventListener("click", () => doExport("3mf"));
