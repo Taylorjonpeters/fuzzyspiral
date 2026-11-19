@@ -12,8 +12,13 @@
     <div class="app">
       <aside class="side">
         <header class="brand">
-          <video class="mascot mascot-on-light" src="./mascot.webm" width="56" height="56" autoplay loop muted playsinline aria-hidden="true"></video>
-          <video class="mascot mascot-on-dark" src="./mascot-light.webm" width="56" height="56" autoplay loop muted playsinline aria-hidden="true"></video>
+          <!-- WebKit (Safari, DuckDuckGo on Mac) plays VP9 WebM but drops its alpha, so it gets HEVC-with-alpha first. -->
+          <video class="mascot mascot-on-light" width="56" height="56" autoplay loop muted playsinline aria-hidden="true">
+            <source src="./mascot.mov" type='video/quicktime; codecs="hvc1"' /><source src="./mascot.webm" type="video/webm" />
+          </video>
+          <video class="mascot mascot-on-dark" width="56" height="56" autoplay loop muted playsinline aria-hidden="true">
+            <source src="./mascot-light.mov" type='video/quicktime; codecs="hvc1"' /><source src="./mascot-light.webm" type="video/webm" />
+          </video>
           <div>
             <h1>FuzzySpiral</h1>
             <p>Fuzzy skin, where you say.</p>
@@ -67,8 +72,13 @@
       </div>
     </div>
     <div id="scrim" class="scrim" hidden role="status" aria-live="polite">
-      <div class="scrim-box"><video class="mascot mascot-on-light" src="./mascot.webm" width="112" height="112" autoplay loop muted playsinline aria-hidden="true"></video>
-        <video class="mascot mascot-on-dark" src="./mascot-light.webm" width="112" height="112" autoplay loop muted playsinline aria-hidden="true"></video>
+      <div class="scrim-box">
+        <video class="mascot mascot-on-light" width="112" height="112" autoplay loop muted playsinline aria-hidden="true">
+          <source src="./mascot.mov" type='video/quicktime; codecs="hvc1"' /><source src="./mascot.webm" type="video/webm" />
+        </video>
+        <video class="mascot mascot-on-dark" width="112" height="112" autoplay loop muted playsinline aria-hidden="true">
+          <source src="./mascot-light.mov" type='video/quicktime; codecs="hvc1"' /><source src="./mascot-light.webm" type="video/webm" />
+        </video>
         <span class="spinner" aria-hidden="true"></span><span id="scrimLabel"></span></div>
     </div>
     <dialog id="errorDialog" class="error-dialog" aria-labelledby="errorTitle">
