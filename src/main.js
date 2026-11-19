@@ -1,5 +1,8 @@
 // Wiring only: file in, settings to the worker, buffers to the preview, bytes out.
 
+import "@fontsource-variable/space-grotesk";
+import "@fontsource-variable/schibsted-grotesk";
+import "./styles.css";
 import { createPreview } from "./view/preview.js";
 import { mountPanel } from "./view/panel.js";
 import { DEFAULT_FUZZ } from "./core/fuzz.js";

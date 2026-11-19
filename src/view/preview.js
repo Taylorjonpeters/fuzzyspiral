@@ -5,11 +5,14 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { createBeads } from "./beads.js";
 import { evalMask } from "../core/patterns.js";
 
-const OFF = new THREE.Color("#5b7fb8");
-const ON = new THREE.Color("#ff8a3d");
+// Scene ink and grid follow the CSS tokens (light, dark, or the data-theme override); the fuzzed
+// and smooth colours are read once, at load.
+const token = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+const OFF = new THREE.Color(token("--smooth", "#5b7fb8"));
+const ON = new THREE.Color(token("--fuzz", "#ff8a3d"));
 
 export function createPreview(host) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   host.appendChild(renderer.domElement);
 
@@ -21,10 +24,19 @@ export function createPreview(host) {
   controls.target.set(128, 128, 0);
   controls.enableDamping = true;
 
-  const bed = new THREE.GridHelper(256, 26, 0x4a4a4a, 0x2e2e2e);
-  bed.rotation.x = Math.PI / 2;
-  bed.position.set(128, 128, 0);
-  scene.add(bed);
+  let bed = null;
+  const markerMats = [];
+  const strokeMats = [];
+  /** Re-read the theme tokens: bed grid, stroke guide and object markers. */
+  function retheme() {
+    if (bed) { scene.remove(bed); bed.geometry.dispose(); bed.material.dispose(); }
+    bed = new THREE.GridHelper(256, 26, new THREE.Color(token("--field-line", "#4a4a4a")), new THREE.Color(token("--line", "#2e2e2e")));
+    bed.rotation.x = Math.PI / 2;
+    bed.position.set(128, 128, 0);
+    scene.add(bed);
+    const ink = new THREE.Color(token("--ink", "#f0f0f0"));
+    for (const m of [...markerMats, ...strokeMats]) m.color.copy(ink);
+  }
 
   const geom = new THREE.BufferGeometry();
   const lines = new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ vertexColors: true }));
@@ -42,6 +54,10 @@ export function createPreview(host) {
   const strokeMat = { color: 0xffffff, depthTest: false, transparent: true };
   const strokeLine = new THREE.Line(strokeGeom, new THREE.LineBasicMaterial(strokeMat));
   const strokeEnds = new THREE.Points(strokeGeom, new THREE.PointsMaterial({ ...strokeMat, size: 9, sizeAttenuation: false }));
+  strokeMats.push(strokeLine.material, strokeEnds.material);
+  retheme();
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
+  new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   for (const o of [strokeLine, strokeEnds]) { o.visible = false; o.renderOrder = 10; o.frustumCulled = false; scene.add(o); }
 
   // Height rings for the gradient drag: orange where fuzz is strongest, blue where it fades out.
@@ -197,11 +213,14 @@ export function createPreview(host) {
       frames = data.frames;
 
       markers.clear();
+      markerMats.length = 0;
       for (const f of Object.values(data.frames)) {
         const g = new THREE.BufferGeometry().setFromPoints([
           new THREE.Vector3(f.x, f.y, 0), new THREE.Vector3(f.x, f.y, f.maxZ + 4),
         ]);
-        markers.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xf0f0f0, transparent: true, opacity: 0.5 })));
+        const mat = new THREE.LineBasicMaterial({ color: token("--ink", "#f0f0f0"), transparent: true, opacity: 0.5 });
+        markerMats.push(mat);
+        markers.add(new THREE.Line(g, mat));
       }
 
       if (!framed && geom.boundingSphere && data.pos.length) {

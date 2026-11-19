@@ -58,9 +58,9 @@ export function createSwatch() {
     const pts = [wall.runs[0].from, ...segs.map((s) => s.to)];
 
     const css = getComputedStyle(document.documentElement);
-    const cool = css.getPropertyValue("--cool").trim() || "#5b7fb8";
-    const accent = css.getPropertyValue("--accent").trim() || "#ff8a3d";
-    const dim = css.getPropertyValue("--dim").trim() || "#9a9a9a";
+    const cool = css.getPropertyValue("--smooth").trim() || "#5b7fb8";
+    const accent = css.getPropertyValue("--fuzz").trim() || "#ff8a3d";
+    const dim = css.getPropertyValue("--muted").trim() || "#9a9a9a";
 
     ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
     ctx.clearRect(0, 0, W, H);
