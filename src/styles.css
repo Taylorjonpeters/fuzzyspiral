@@ -21,7 +21,7 @@
   --warn-ink: #7a2412;
   --info-bg: #e9e2d3;
   --code-bg: #ece6da;
-  --scrim: rgb(244 241 236 / 0.7);
+  --scrim: rgb(244 241 236 / 0.88);
   color-scheme: light;
 
   /* Spacing */
@@ -63,7 +63,7 @@
     --warn-ink: #ffb8a6;
     --info-bg: #332e26;
     --code-bg: #332e26;
-    --scrim: rgb(27 25 21 / 0.7);
+    --scrim: rgb(27 25 21 / 0.88);
     color-scheme: dark;
   }
 }
@@ -72,7 +72,7 @@
   --field-bg: #1b1915; --field-line: #5b5346;
   --accent: #e08a3c; --accent-ink: #1b1915; --fuzz: #ff8a3d; --smooth: #6f9be0;
   --warn-bg: #4a2219; --warn-ink: #ffb8a6; --info-bg: #332e26; --code-bg: #332e26;
-  --scrim: rgb(27 25 21 / 0.7);
+  --scrim: rgb(27 25 21 / 0.88);
   color-scheme: dark;
 }
 
@@ -260,7 +260,11 @@ dialog.error-dialog form { display: flex; justify-content: flex-end; }
    preview catches up; over the whole screen it blocks input until a file is read or written. */
 .scrim { position: fixed; z-index: 30; display: grid; place-items: center; background: var(--scrim); pointer-events: none; }
 .scrim.screen { inset: 0; pointer-events: auto; }
-.scrim-box { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-card); box-shadow: 0 8px 24px rgb(0 0 0 / 0.2); font-size: var(--fs-sm); }
-.spinner { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+/* Same loading state as PlyWooder: the logo, large, with the message under it in the heading font. */
+.scrim-box { display: grid; justify-items: center; gap: var(--sp-2); text-align: center; font-family: var(--font-head); font-size: var(--fs-xl); color: var(--ink); }
+.spinner { display: none; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+.scrim-box .spinner { margin: 0 auto; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } .brand .mascot { display: none !important; } }
+.scrim-box .mascot { width: 112px; height: 112px; flex: none; object-fit: contain; }
+/* Reduced motion: no animated logo, a slow spinner instead. */
+@media (prefers-reduced-motion: reduce) { .mascot { display: none !important; } .spinner { display: block; animation-duration: 2.4s; } }

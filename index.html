@@ -4,10 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>FuzzySpiral</title>
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231c1c1c'/%3E%3Cpath d='M9 26 L9 6 M23 26 L23 6' stroke='%235b7fb8' stroke-width='2.5'/%3E%3Cpath d='M9 24 L23 18 M9 16 L23 10' stroke='%23ff8a3d' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"
-    />
+    <link rel="icon" href="./favicon.ico" sizes="48x48" />
+    <link rel="icon" href="./favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
   </head>
   <body>
     <div class="app">
@@ -68,7 +67,9 @@
       </div>
     </div>
     <div id="scrim" class="scrim" hidden role="status" aria-live="polite">
-      <div class="scrim-box"><span class="spinner" aria-hidden="true"></span><span id="scrimLabel"></span></div>
+      <div class="scrim-box"><video class="mascot mascot-on-light" src="./mascot.webm" width="112" height="112" autoplay loop muted playsinline aria-hidden="true"></video>
+        <video class="mascot mascot-on-dark" src="./mascot-light.webm" width="112" height="112" autoplay loop muted playsinline aria-hidden="true"></video>
+        <span class="spinner" aria-hidden="true"></span><span id="scrimLabel"></span></div>
     </div>
     <dialog id="errorDialog" class="error-dialog" aria-labelledby="errorTitle">
       <h2 id="errorTitle"></h2>

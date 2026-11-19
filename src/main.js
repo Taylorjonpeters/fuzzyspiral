@@ -68,6 +68,8 @@ function renderScrim() {
   const scrim = $("scrim");
   scrim.hidden = !top;
   if (!top) return;
+  // The logo videos were hidden when the page loaded, so autoplay never started them.
+  for (const v of scrim.querySelectorAll("video")) v.play().catch(() => {});
   $("scrimLabel").textContent = top.label;
   scrim.classList.toggle("screen", top.scope === "screen");
   if (top.scope === "stage") {
